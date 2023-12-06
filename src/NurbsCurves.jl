@@ -12,19 +12,20 @@ Define a non-uniform rational B-spline curve.
 - `knots`: A 1D array of th knot vector of the NURBS curve
 - `wgts`: A 1D array of the wight of the pnts of the NURBS curve 
 - `d`: The degree of the NURBS curve
+- `n`: the spacial dimension of the NURBS curve, n ∈ {2,3}
 """
-struct NurbsCurve{d,A<:AbstractArray,V<:AbstractVector,W<:AbstractVector} <: Function
+struct NurbsCurve{n,d,A<:AbstractArray,V<:AbstractVector,W<:AbstractVector} <: Function
     pnts::A
     knots::V
     wgts::W
 end
 function NurbsCurve(pnts,knots,weights)
-    count,T = size(pnts, 2),promote_type(eltype(pnts),Float32)
+    (dim,count),T = size(pnts),promote_type(eltype(pnts),Float32)
     @assert count == length(weights) "Invalid NURBS: each control point should have a corresponding weights."
     @assert count < length(knots) "Invalid NURBS: the number of knots should be greater than the number of control points."
     degree = length(knots) - count - 1 # the one in the input is not used
     knots = SA{T}[knots...]; weights = SA{T}[weights...]
-    NurbsCurve{degree,typeof(pnts),typeof(knots),typeof(weights)}(copy(pnts),knots,weights)
+    NurbsCurve{dim,degree,typeof(pnts),typeof(knots),typeof(weights)}(pnts,knots,weights)
 end
 Base.copy(n::NurbsCurve) = NurbsCurve(copy(n.pnts),copy(n.knots),copy(n.wgts))
 
@@ -37,11 +38,11 @@ Define a uniform B-spline curve.
 Note: An open, uniform knot vector for a degree `degree` B-spline is constructed by default.
 """
 function BSplineCurve(pnts;degree=1)
-    count,T = size(pnts, 2),promote_type(eltype(pnts),Float32)
+    (dim,count),T = size(pnts),promote_type(eltype(pnts),Float32)
     @assert degree <= count - 1 "Invalid B-Spline: the degree should be less than the number of control points minus 1."
     knots = SA{T}[[zeros(degree); collect(range(0, count-degree) / (count-degree)); ones(degree)]...]
     weights = SA{T}[ones(count)...]
-    NurbsCurve{degree,typeof(pnts),typeof(knots),typeof(weights)}(copy(pnts),knots,weights)
+    NurbsCurve{dim,degree,typeof(pnts),typeof(knots),typeof(weights)}(pnts,knots,weights)
 end
 
 """
@@ -51,8 +52,8 @@ Evaluate the NURBS curve
 - `s` : A float, representing the position along the spline where we want to compute the value of that NURBS
 - `t` time is currently unused but needed for ParametricBodies
 """
-function (l::NurbsCurve{d})(u::T,t)::SVector where {T,d}
-    pt = SA{T}[0, 0]; wsum=T(0.0)
+function (l::NurbsCurve{n,d})(u::T,t)::SVector where {T,d,n}
+    pt = zeros(SVector{n,T}); wsum=T(0.0)
     for k in 1:size(l.pnts, 2)
         l.knots[k]>u && break
         l.knots[k+d+1]≥u && (prod = Bd(l.knots,u,k,Val(d))*l.wgts[k];
