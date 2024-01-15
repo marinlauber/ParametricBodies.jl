@@ -18,16 +18,15 @@ but can be very unstable for general parametric curves. This is mitigated by sup
 Creates NurbsLocator by sampling the curve and finding the bounding box. This box is expanded by the amount `buffer`. 
 The hash array is allocated to span the box with resolution `step` and initialized using `update!(::,curve,t⁰,samples)`.
 """
-struct NurbsLocator{T,F<:Function,F2<:Function,A<:AbstractArray{T,2}}
+struct NurbsLocator{T,N,F<:Function,G<:Function,B<:AbstractVector{T}}
     refine::F
-    surf::F2
+    surf::G
     lims::NTuple{2,T}
-    hash::A
-    lower::MVector{2,T}
-    upper::MVector{2,T}
+    lower::B
+    upper::B
     step::T
 end
-Adapt.adapt_structure(to, x::NurbsLocator) = NurbsLocator(x.refine,x.surf,x.lims,adapt(to,x.hash),x.lower,x.upper,x.step)
+Adapt.adapt_structure(to, x::NurbsLocator) = NurbsLocator(x.refine,x.surf,x.lims,adapt(to,x.lower),adapt(to,x.upper),x.step)
 
 function NurbsLocator(curve,lims;t⁰=0,step=1,buffer=2,T=Float64,mem=Array)
     # Apply type and get refinement function
@@ -36,13 +35,13 @@ function NurbsLocator(curve,lims;t⁰=0,step=1,buffer=2,T=Float64,mem=Array)
 
     # Get curve's bounding box
     samples = range(lims...,64)
-    lower = upper = curve(first(samples),t⁰)
+    lower = upper = curve(first(samples),t⁰) |> mem
     @assert eltype(lower)==T "`curve` is not type stable"
-    @assert isa(curve(first(samples),t⁰),SVector{2,T}) "`curve` doesn't return a 2D SVector"
+    N = length(curve(first(samples),t⁰))
+    @assert isa(curve(first(samples),t⁰),SVector{N,T}) "`curve` doesn't return a SVector"
 
-    # Allocate hash and struct, and update hash
-    hash = fill(first(lims),ceil.(Int,(2,2))...) |> mem
-    l=adapt(mem,NurbsLocator{T,typeof(f),typeof(curve),typeof(hash)}(f,curve,lims,hash,lower,upper,step))
+    # Allocate struct, and update
+    l=adapt(mem,NurbsLocator{T,N,typeof(f),typeof(curve),typeof(lower)}(f,curve,lims,lower,upper,step))
     update!(l,curve,t⁰,samples)
 end
 
@@ -53,7 +52,7 @@ notC¹(l::NurbsLocator,uv) = any(uv.≈l.lims)
 
 Updates `l.hash` for `surf` at time `t` by searching through `samples` and refining.
 """
-update!(l::NurbsLocator,surf,t,samples=l.lims)=(_update!(get_backend(l.hash),64)(l,surf,samples,t,ndrange=size(l.hash));l)
+update!(l::NurbsLocator,surf,t,samples=l.lims)=(_update!(get_backend(l.lower),64)(l,surf,samples,t,ndrange=64);l)
 @kernel function _update!(l::NurbsLocator{T},surf,@Const(samples),@Const(t)) where T
     # update bounding box
     l.lower .= l.upper .= surf(first(samples),t)

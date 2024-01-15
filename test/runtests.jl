@@ -129,6 +129,12 @@ end
     nurbs = NurbsCurve(cps_m,knots,weights)
     Body = DynamicBody(nurbs,(0,1))
 
+    #Test on CUDA
+    if(CUDA.functional())
+        Body = DynamicBody(nurbs,(0,1), T=Float32, mem=CuArray);
+        # @CUDA.allowscalar @test all(measure(Body,SA_F32[1,1],0) .≈ [1,[0.,1.],[0.,0.]])
+    end
+
     # check some distance
     @test all(measure(Body,[1,1],0) .≈ [1,[0.,1.],[0.,0.]])
     # update, should now have a velocity
