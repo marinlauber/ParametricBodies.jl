@@ -16,9 +16,10 @@ struct DynamicBody{T,S<:Function,L<:Union{Function,NurbsLocator},V<:Function,D<:
     scale::T   #|dx/dξ| = scale
     dist::D
 end
-function DynamicBody(surf,locate;dist=dis,T=Float64) where {N}
+function DynamicBody(surf,locate;dist=dis,T=Float64)
     # Check input functions
-    x,t = SVector{N,T}(0,0),T(0);
+    N = length(locate.lower)
+    x,t = zeros(SVector{N,T}),T(0);
     @CUDA.allowscalar uv = locate(x,t); p = x-surf(uv,t)
     @assert isa(uv,T) "locate is not type stable"
     @assert isa(p,SVector{N,T}) "surf is not type stable"
@@ -56,13 +57,23 @@ function surf_props(body::DynamicBody,ξ,t)
     uv = body.locate(ξ,t)
 
     # Get normal direction and vector from surf to ξ
-    n = norm_dir(body.surf,uv,t)
     p = ξ-body.surf(uv,t)
+    n = norm_dir(body.surf,uv,p,t)
 
     # Fix direction for C⁰ points, normalize, and get distance
     notC¹(body.locate,uv) && p'*p>0 && (n = p)
     n /=  √(n'*n)
     return (body.dist(p,n),n,uv)
+end
+
+using LinearAlgebra: dot
+function norm_dir(nurbs::NurbsCurve{2},uv::Number,p::SVector{2},t)
+    s = ForwardDiff.derivative(uv->nurbs(uv,t),uv)
+    return SA[s[2],-s[1]]
+end
+function norm_dir(nurbs::NurbsCurve{3},uv::Number,p::SVector{3},t)
+    s = ForwardDiff.derivative(uv->nurbs(uv,t),uv); s/=√(s'*s)
+    return p-dot(p,s)*s
 end
 
 """
