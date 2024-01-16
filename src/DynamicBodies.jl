@@ -56,13 +56,22 @@ function surf_props(body::DynamicBody,ξ,t)
     uv = body.locate(ξ,t)
 
     # Get normal direction and vector from surf to ξ
-    n = norm_dir(body.surf,uv,t)
     p = ξ-body.surf(uv,t)
+    n = norm_dir(body.surf,uv,p,t)
 
     # Fix direction for C⁰ points, normalize, and get distance
     notC¹(body.locate,uv) && p'*p>0 && (n = p)
     n /=  √(n'*n)
     return (body.dist(p,n),n,uv)
+end
+
+function norm_dir(nurbs<:NurbsCurve{2},uv::Number,p<:SVector{2},t)
+    s = ForwardDiff.derivative(uv->nurbs(uv,t),uv)
+    return SA[s[2],-s[1]]
+end
+function norm_dir(nurbs<:NurbsCurve{3},uv::Number,p<:SVector{3},t)
+    s = ForwardDiff.derivative(uv->nurbs(uv,t),uv); s/=√(s'*s)
+    return p-dot(p,s)*s
 end
 
 """
