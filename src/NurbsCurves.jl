@@ -121,7 +121,7 @@ Plot `recipe`` for `NurbsCurve``, plot the `NurbsCurve` and the control points.
         linecolor := :black
         linewidth := 2
         markershape := :none
-        c = [C(s,0.0).+0.5 for s ∈ 0:1/N:1]
+        c = [C(s,0.0).+1.5 for s ∈ 0:1/N:1]
         getindex.(c,1),getindex.(c,2)
     end
     @series begin
@@ -129,6 +129,6 @@ Plot `recipe`` for `NurbsCurve``, plot the `NurbsCurve` and the control points.
         markershape --> (add_cp ? :circle : :none)
         markersize --> (add_cp ? 4 : 0)
         delete!(plotattributes, :add_cp)
-        C.pnts[1,:].+0.5,C.pnts[2,:].+0.5
+        C.pnts[1,:].+1.5,C.pnts[2,:].+1.5
     end
 end
