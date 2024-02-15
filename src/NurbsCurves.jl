@@ -94,8 +94,8 @@ end
 
 Compute the total force acting on a NurbsCurve from a pressure field `p`.
 """
-force(surf::NurbsCurve,p::AbstractArray{T}) where {T} = 
-        integrate(s->NurbsForce(surf,p,s),surf;N=64)
+force(surf::NurbsCurve,p::AbstractArray{T};N=64) where {T} = 
+                       integrate(s->NurbsForce(surf,p,s),surf;N)
 """
     integrate(f(uv),curve;N=64)
 
