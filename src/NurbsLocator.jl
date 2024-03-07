@@ -18,17 +18,15 @@ but can be very unstable for general parametric curves. This is mitigated by sup
 Creates NurbsLocator by sampling the curve and finding the bounding box. This box is expanded by the amount `buffer`. 
 The hash array is allocated to span the box with resolution `step` and initialized using `update!(::,curve,t⁰,samples)`.
 """
-struct NurbsLocator{T,F<:Function,G<:Function,A<:AbstractArray{T,2},B<:AbstractVector{T}}
+struct NurbsLocator{T,F<:Function,G<:Function,B<:AbstractVector{T}}
     refine::F
     surf::G
     lims::NTuple{2,T}
-    hash::A
     lower::B
     upper::B
     step::T
 end
-Adapt.adapt_structure(to, x::NurbsLocator) = NurbsLocator(x.refine,x.surf,x.lims,adapt(to,x.hash),
-                                                          adapt(to,x.lower),adapt(to,x.upper),x.step)
+Adapt.adapt_structure(to, x::NurbsLocator) = NurbsLocator(x.refine,x.surf,x.lims,adapt(to,x.lower),adapt(to,x.upper),x.step)
 
 function NurbsLocator(curve,lims;t⁰=0,step=1,buffer=2,T=Float64,mem=Array)
     # Apply type and get refinement function
@@ -42,9 +40,8 @@ function NurbsLocator(curve,lims;t⁰=0,step=1,buffer=2,T=Float64,mem=Array)
     N = length(curve(first(samples),t⁰))
     @assert isa(curve(first(samples),t⁰),SVector{N,T}) "`curve` doesn't return a 2D SVector"
 
-    # Allocate hash and struct, and update hash
-    hash = fill(first(lims),N,N) |> mem
-    l=adapt(mem,NurbsLocator{T,typeof(f),typeof(curve),typeof(hash),typeof(lower)}(f,curve,lims,hash,lower,upper,step))
+    # Allocate struct, and update
+    l=adapt(mem,NurbsLocator{T,typeof(f),typeof(curve),typeof(lower)}(f,curve,lims,lower,upper,step))
     update!(l,curve,t⁰,samples)
 end
 
@@ -53,9 +50,9 @@ notC¹(l::NurbsLocator,uv) = any(uv.≈l.lims)
 """
     update!(l::NurbsLocator,surf,t,samples=l.lims)
 
-Updates `l.hash` for `surf` at time `t` by searching through `samples` and refining.
+Updates `l` for `surf` at time `t` by searching through `samples` and refining.
 """
-update!(l::NurbsLocator,surf,t,samples=l.lims)=(_update!(get_backend(l.hash),64)(l,surf,samples,t,ndrange=size(l.hash));l)
+update!(l::NurbsLocator,surf,t,samples=l.lims)=(_update!(get_backend(l.lower),64)(l,surf,samples,t,ndrange=size(l.lower));l)
 @kernel function _update!(l::NurbsLocator{T},surf,@Const(samples),@Const(t)) where T
     # update bounding box
     l.lower .= l.upper .= surf(first(samples),t)
@@ -72,7 +69,7 @@ end
     (l::NurbsLocator)(x,t)
 
 Estimate the parameter value `uv⁺ = argmin_uv (X-curve(uv,t))²` in two steps:
-1. Interploate an initial guess  `uv=l.hash(x)`. Return `uv⁺~uv` if `x` is outside the hash domain.
+1. Interploate an initial guess  `uv=l(x)`. Return `uv⁺~uv` if `x` is outside the bounding box.
 2. Apply a bounded Newton step `uv⁺≈l.refine(x,uv,t)` to refine the estimate.
 """
 function (l::NurbsLocator)(x,t)

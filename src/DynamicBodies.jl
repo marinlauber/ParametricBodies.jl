@@ -20,7 +20,7 @@ function DynamicBody(surf,locate;dist=dis,T=Float64)
     # Check input functions
     N = length(locate.lower)
     x,t = zeros(SVector{N,T}),T(0);
-    @CUDA.allowscalar uv = locate(x,t); p = x-surf(uv,t)
+    uv = locate(x,t); p = x-surf(uv,t)
     @assert isa(uv,T) "locate is not type stable"
     @assert isa(p,SVector{N,T}) "surf is not type stable"
     @assert isa(dist(x,x),T) "dist is not type stable"
@@ -80,7 +80,7 @@ end
     update
 """
 update!(body::DynamicBody{T,F,L,V},t) where {T,F,L<:NurbsLocator,V} = 
-    update!(body.locate,body.surf,t)
+        update!(body.locate,body.surf,t)
 function update!(body::DynamicBody{T,F,L,V},uⁿ::AbstractArray,Δt) where {T,F,L<:NurbsLocator,V}
     body.velocity.pnts .= (uⁿ.-copy(body.surf.pnts))./Δt
     body.surf.pnts .= uⁿ
@@ -91,3 +91,31 @@ function update!(body::DynamicBody{T,F,L,V},uⁿ::AbstractArray,vⁿ::AbstractAr
     body.velocity.pnts .= vⁿ
     update!(body.locate,body.surf,0.0)
 end
+# using WaterLily: Flow
+# force(body::DynamicBody,flow;N=64) = integrate(s->Forces(body,flow,s),body.surf;N)
+# function Forces(body::DynamicBody{T},flow::Flow{N,T},s,δ=2.0) where {N,T}
+#     xᵢ = body.surf(s,0.0)
+#     δnᵢ = δ*ParametricBodies.norm_dir(body.surf,s,0.0); δnᵢ/=√(δnᵢ'*δnᵢ)
+#     Δpₓ = interp(xᵢ+δnᵢ,flow.p)-interp(xᵢ-δnᵢ,flow.p)
+#     vᵢ = body.velocity(s,0.0)
+#     τ = SVector{N,T}(zeros(N))
+#     for j ∈ [-1,1]
+#         uᵢ = interp(xᵢ+j*δnᵢ,flow.u)
+#         uᵢ = uᵢ .- sum(uᵢ.*δnᵢ)*δnᵢ
+#         τ = τ + 2.0.*(uᵢ.-vᵢ)./(2δ)
+#     end
+#     return -Δpₓ.*δnᵢ #+ flow.ν.*τ
+# end
+# vforce(body::DynamicBody,flow;N=64) = integrate(s->VForces(body,flow,s),body.surf;N)
+# function VForces(body::DynamicBody{T},flow::Flow{N,T},s,δ=2.0) where {N,T}
+#     xᵢ = body.surf(s,0.0)
+#     δnᵢ = δ*ParametricBodies.norm_dir(body.surf,s,0.0); δnᵢ/=√(δnᵢ'*δnᵢ)
+#     vᵢ = body.velocity(s,0.0); τ = SVector{N,T}(zeros(N))
+#     vᵢ = vᵢ .- sum(vᵢ.*δnᵢ)*δnᵢ
+#     for j ∈ [-1,1]
+#         uᵢ = interp(xᵢ+j*δnᵢ,flow.u)
+#         uᵢ = uᵢ .- sum(uᵢ.*δnᵢ)*δnᵢ
+#         τ = τ + (uᵢ.-vᵢ)./δ
+#     end
+#     return flow.ν.*τ
+# end

@@ -18,14 +18,15 @@ struct NurbsCurve{n,d,A<:AbstractArray,V<:AbstractVector,W<:AbstractVector} <: F
     pnts::A
     knots::V
     wgts::W
+    vel::Union{Nothing,A}
 end
-function NurbsCurve(pnts,knots,weights)
+function NurbsCurve(pnts,knots,weights;vel=nothing)
     (dim,count),T = size(pnts),promote_type(eltype(pnts),Float32)
     @assert count == length(weights) "Invalid NURBS: each control point should have a corresponding weights."
     @assert count < length(knots) "Invalid NURBS: the number of knots should be greater than the number of control points."
     degree = length(knots) - count - 1 # the one in the input is not used
     knots = SA{T}[knots...]; weights = SA{T}[weights...]
-    NurbsCurve{dim,degree,typeof(pnts),typeof(knots),typeof(weights)}(pnts,knots,weights)
+    NurbsCurve{dim,degree,typeof(pnts),typeof(knots),typeof(weights)}(pnts,knots,weights,vel)
 end
 Base.copy(n::NurbsCurve) = NurbsCurve(copy(n.pnts),copy(n.knots),copy(n.wgts))
 
@@ -61,6 +62,16 @@ function (l::NurbsCurve{n,d})(u::T,t)::SVector where {T,d,n}
     end
     pt/wsum
 end
+function velocity(l::NurbsCurve{n,d},u::T,t)::SVector where {T,d,n}
+    vel = zeros(SVector{n,T}); wsum=T(0.0)
+    isnothing(l.vel) && return vel # zero velocity by default
+    for k in 1:size(l.vel, 2)
+        l.knots[k]>u && break
+        l.knots[k+d+1]≥u && (prod = Bd(l.knots,u,k,Val(d))*l.wgts[k];
+                             vel +=prod*l.vel[:,k]; wsum+=prod)
+    end
+    vel/wsum
+end
 
 """
     Bd(knot, u, k, ::Val{d}) where d
@@ -71,31 +82,46 @@ Compute the Cox-De Boor recursion for B-spline basis functions.
 - `k` : An Integer representing which basis function is computed.
 - `d`: An Integer representing the order of the basis function to be computed.
 """
-Bd(knots, u, k, ::Val{0}) = Int(knots[k]≤u<knots[k+1] || u==knots[k+1]==1)
-function Bd(knots, u, k, ::Val{d}) where d
-    ((u-knots[k])/max(eps(Float32),knots[k+d]-knots[k])*Bd(knots,u,k,Val(d-1))
-    +(knots[k+d+1]-u)/max(eps(Float32),knots[k+d+1]-knots[k+1])*Bd(knots,u,k+1,Val(d-1)))
+Bd(knots, u::T, k, ::Val{0}) where T = Int(knots[k]≤u<knots[k+1] || u==knots[k+1]==1)
+function Bd(knots, u::T, k, ::Val{d}) where {T,d}
+    ((u-knots[k])/max(eps(T),knots[k+d]-knots[k])*Bd(knots,u,k,Val(d-1))
+    +(knots[k+d+1]-u)/max(eps(T),knots[k+d+1]-knots[k+1])*Bd(knots,u,k+1,Val(d-1)))
 end
 """
-    NurbsForce(surf::NurbsCurve,p::AbstractArray{T},s,δ=2.0) where T
+    PForce(surf::NurbsCurve,p::AbstractArray{T},s,δ=2.0) where T
 
 Compute the normal (Pressure) force on the NurbsCurve curve from a pressure field `p`
 at the parametric coordinate `s`. Useful to compute the force at an integration point
 along the NurbsCurve
 """
-function NurbsForce(surf::NurbsCurve,p::AbstractArray{T},s,δ=2.0) where T
+NurbsForce(surf,p,s,δ=2.0) = PForce(surf,p,s,δ)
+function PForce(surf::NurbsCurve,p::AbstractArray{T},s,δ=2.0) where T
     xᵢ = surf(s,0.0)
     δnᵢ = δ*ParametricBodies.norm_dir(surf,s,0.0); δnᵢ/=√(δnᵢ'*δnᵢ)
     Δpₓ = interp(xᵢ+δnᵢ,p)-interp(xᵢ-δnᵢ,p)
     return -Δpₓ.*δnᵢ
 end
+function VForce(surf::NurbsCurve,u::AbstractArray{T},s,δ=2.0) where T
+    xᵢ = surf(s,0.0)
+    δnᵢ = δ*ParametricBodies.norm_dir(surf,s,0.0); δnᵢ/=√(δnᵢ'*δnᵢ)
+    vᵢ = velocity(surf,s,0.0); τ = SVector{length(vᵢ),T}(zero(vᵢ))
+    vᵢ = vᵢ .- sum(vᵢ.*δnᵢ)*δnᵢ
+    for j ∈ [-1,1]
+        uᵢ = interp(xᵢ+j*δnᵢ,u)
+        uᵢ = uᵢ .- sum(uᵢ.*δnᵢ)*δnᵢ
+        τ = τ + (uᵢ.-vᵢ)./δ
+    end
+    return τ
+end
 """
-    NurbsForce(surf::NurbsCurve,p::AbstractArray{T}) where T
+    PForce(surf::NurbsCurve,p::AbstractArray{T}) where T
 
 Compute the total force acting on a NurbsCurve from a pressure field `p`.
 """
-force(surf::NurbsCurve,p::AbstractArray{T};N=64) where {T} = 
-                       integrate(s->NurbsForce(surf,p,s),surf;N)
+pforce(surf::NurbsCurve,p::AbstractArray{T};N=64) where T = 
+                       integrate(s->PForce(surf,p,s),surf;N)
+vforce(surf::NurbsCurve,u::AbstractArray{T};N=64) where T = 
+                       integrate(s->VForce(surf,u,s),surf;N)
 """
     integrate(f(uv),curve;N=64)
 
@@ -104,17 +130,17 @@ integrate a function f(uv) along the curve::NurbsCurve, default is the length of
 integrate(curve::NurbsCurve;N=64) = integrate((ξ)->1.0,curve::NurbsCurve;N=64)
 function integrate(f::Function,curve::NurbsCurve;N=64)
     # integrate NURBS curve to compute its length
-    x, w = gausslegendre(N)
+    uv_, w_ = gausslegendre(N)
     # map onto the (0,1) interval, need a weight scalling
-    uv_ = (x.+1)/2; w/=2 
-    sum([f(uv)*norm(derivative(uv->curve(uv,0.),uv))*w[i] for (i,uv) in enumerate(uv_)])
+    uv_ = (uv_.+1)/2; w_/=2 
+    sum([f(uv)*norm(derivative(uv->curve(uv,0.),uv))*w for (uv,w) in zip(uv_,w_)])
 end
 """
     f(C::NurbsCurve, N::Integer=100)
 
 Plot `recipe`` for `NurbsCurve``, plot the `NurbsCurve` and the control points.
 """
-@recipe function f(C::NurbsCurve, N::Integer=100; add_cp=true)
+@recipe function f(C::NurbsCurve, N::Integer=100; add_cp=true, shifts=[0.,0.])
     seriestype := :path
     primary := false
     @series begin
@@ -122,13 +148,13 @@ Plot `recipe`` for `NurbsCurve``, plot the `NurbsCurve` and the control points.
         linewidth := 2
         markershape := :none
         c = [C(s,0.0).+1.5 for s ∈ 0:1/N:1]
-        getindex.(c,1),getindex.(c,2)
+        getindex.(c,1).+shifts[1],getindex.(c,2).+shifts[2]
     end
     @series begin
         linewidth  --> (add_cp ? 1 : 0)
         markershape --> (add_cp ? :circle : :none)
         markersize --> (add_cp ? 4 : 0)
         delete!(plotattributes, :add_cp)
-        C.pnts[1,:].+1.5,C.pnts[2,:].+1.5
+        C.pnts[1,:].+shifts[1],C.pnts[2,:].+shifts[2]
     end
 end

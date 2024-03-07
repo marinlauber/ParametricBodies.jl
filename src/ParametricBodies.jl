@@ -1,13 +1,13 @@
 module ParametricBodies
 
 using StaticArrays,ForwardDiff
-using CUDA,Adapt,KernelAbstractions
+using Adapt,KernelAbstractions
 
 include("HashedLocators.jl")
 export HashedLocator, refine, mymod
 
 include("NurbsCurves.jl")
-export NurbsCurve, BSplineCurve, integrate, force, NurbsForce
+export NurbsCurve, BSplineCurve, integrate, pforce, vforce, NurbsForce
 
 import WaterLily: AbstractBody,measure,sdf,interp
 """
@@ -45,7 +45,7 @@ end
 function ParametricBody(surf,locate;map=(x,t)->x,T=Float64)
     # Check input functions
     x,t = SVector{2,T}(0,0),T(0); ξ = map(x,t)
-    @CUDA.allowscalar uv = locate(ξ,t); p = ξ-surf(uv,t)
+    uv = locate(ξ,t); p = ξ-surf(uv,t)
     @assert isa(ξ,SVector{2,T}) "map is not type stable"
     @assert isa(uv,T) "locate is not type stable"
     @assert isa(p,SVector{2,T}) "surf is not type stable"
@@ -122,5 +122,16 @@ export NurbsLocator
 
 include("DynamicBodies.jl")
 export DynamicBody,measure
+
+# Backward compatibility for extensions
+if !isdefined(Base, :get_extension)
+    using Requires
+end
+function __init__()
+    @static if !isdefined(Base, :get_extension)
+        @require AMDGPU = "21141c5a-9bdb-4563-92ae-f87d6854732e" include("../ext/ParametricBodiesAMDGPUExt.jl")
+        @require CUDA = "052768ef-5323-5732-b1bb-66c8b64840ba" include("../ext/ParametricBodiesCUDAExt.jl")
+    end
+end
 
 end
