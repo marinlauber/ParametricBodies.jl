@@ -4,10 +4,10 @@ using StaticArrays,ForwardDiff
 using Adapt,KernelAbstractions
 
 include("HashedLocators.jl")
-export HashedLocator, refine, mymod
+export HashedLocator,refine,mymod
 
 include("NurbsCurves.jl")
-export NurbsCurve, BSplineCurve, integrate, pforce, vforce, NurbsForce
+export NurbsCurve,BSplineCurve,interpNurbs,integrate,pforce,vforce,NurbsForce
 
 import WaterLily: AbstractBody,measure,sdf,interp
 """

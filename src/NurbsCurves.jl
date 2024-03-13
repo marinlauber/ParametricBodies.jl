@@ -38,12 +38,12 @@ Define a uniform B-spline curve.
 - `degree`: The degree of the B-spline curve
 Note: An open, uniform knot vector for a degree `degree` B-spline is constructed by default.
 """
-function BSplineCurve(pnts;degree=1)
+function BSplineCurve(pnts;degree=1,vel=nothing)
     (dim,count),T = size(pnts),promote_type(eltype(pnts),Float32)
     @assert degree <= count - 1 "Invalid B-Spline: the degree should be less than the number of control points minus 1."
     knots = SA{T}[[zeros(degree); collect(range(0, count-degree) / (count-degree)); ones(degree)]...]
     weights = SA{T}[ones(count)...]
-    NurbsCurve{dim,degree,typeof(pnts),typeof(knots),typeof(weights)}(pnts,knots,weights)
+    NurbsCurve{dim,degree,typeof(pnts),typeof(knots),typeof(weights)}(pnts,knots,weights,vel)
 end
 
 """
@@ -94,7 +94,7 @@ Compute the normal (Pressure) force on the NurbsCurve curve from a pressure fiel
 at the parametric coordinate `s`. Useful to compute the force at an integration point
 along the NurbsCurve
 """
-NurbsForce(surf,p,s,δ=2.0) = PForce(surf,p,s,δ)
+NurbsForce(surf,p,s,δ=2.0) = PForce(surf,p,s,δ) # Backward compatibility
 function PForce(surf::NurbsCurve,p::AbstractArray{T},s,δ=2.0) where T
     xᵢ = surf(s,0.0)
     δnᵢ = δ*ParametricBodies.norm_dir(surf,s,0.0); δnᵢ/=√(δnᵢ'*δnᵢ)
@@ -136,9 +136,33 @@ function integrate(f::Function,curve::NurbsCurve;N=64)
     sum([f(uv)*norm(derivative(uv->curve(uv,0.),uv))*w for (uv,w) in zip(uv_,w_)])
 end
 """
+    interpNurbs(pnts{D,n};p=n-1)
+
+Given a `SMatrix{D ∈ [2,3],n}` of points, fits a `NurbsCurve{D,n}` of degree `p` to 
+this set of points. By default the highest degrees NURBS is constructed.
+"""
+function interpNurbs(pnts::SMatrix{D,n,T};p=n-1) where {D,n,T}
+    @assert p <= n - 1 "Invalid interpolation: the degree should be less than the number of control points minus 1."    
+    # construct the parameter and the knot vector
+    s = _u(pnts)
+    knot = SA[[zeros(p+1); [sum(s[j:j+p-1])/p for j ∈ p-1:n-p]; ones(p+1)]...]
+    # construct system and solve
+    A = zeros(n,n);
+    for i ∈ 1:n, k ∈ 1:n
+        A[i,k] = ifelse(abs(i-k)≥p,0.0,ParametricBodies.Bd(knot,s[i],k,Val(p)))
+    end
+    cpns = SMatrix{2,n}((A\pnts')') # bit ugly, but it works
+    # build NurbsCurve and return it
+    NurbsCurve(cpns,knot,ones(size(cpns,2)))
+end
+function _u(pnts::SMatrix{D,n,T}) where {D,n,T}
+    d = sum([norm(pnts[:,k]-pnts[:,k-1]) for k ∈ 2:n])
+    vcat(zero(T),cumsum([norm(pnts[:,k]-pnts[:,k-1])/d for k ∈ 2:n]))
+end
+"""
     f(C::NurbsCurve, N::Integer=100)
 
-Plot `recipe`` for `NurbsCurve``, plot the `NurbsCurve` and the control points.
+Plot `recipes` for `NurbsCurve`, plot the `NurbsCurve` and the control points.
 """
 @recipe function f(C::NurbsCurve, N::Integer=100; add_cp=true, shift=[0.,0.])
     seriestype := :path
