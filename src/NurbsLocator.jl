@@ -45,7 +45,8 @@ function NurbsLocator(curve,lims;t⁰=0,step=1,buffer=2,T=Float64,mem=Array)
     update!(l,curve,t⁰,samples)
 end
 
-notC¹(l::NurbsLocator,uv) = any(uv.≈l.lims)
+# if it's open, we need to check that we are not at the endpoints
+notC¹(l::NurbsLocator,uv) = !(l.surf(first(l.lims),0)≈l.surf(last(l.lims),0)) && any(uv.≈l.lims)
 
 """
     update!(l::NurbsLocator,surf,t,samples=l.lims)
