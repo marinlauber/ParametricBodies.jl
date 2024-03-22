@@ -35,7 +35,7 @@ function NurbsLocator(curve,lims;t⁰=0,step=1,buffer=2,T=Float64,mem=Array)
 
     # Get curve's bounding box
     samples = range(lims...,64)
-    lower = upper = curve(first(samples),t⁰) |> mem
+    lower = curve(first(samples),t⁰) |> mem; upper = curve(last(samples),t⁰) |> mem
     @assert eltype(lower)==T "`curve` is not type stable"
     N = length(curve(first(samples),t⁰))
     @assert isa(curve(first(samples),t⁰),SVector{N,T}) "`curve` doesn't return a 2D SVector"
@@ -48,6 +48,15 @@ end
 # if it's open, we need to check that we are not at the endpoints
 notC¹(l::NurbsLocator,uv) = !(l.surf(first(l.lims),0)≈l.surf(last(l.lims),0)) && any(uv.≈l.lims)
 
+# @generated function notC¹(l::NurbsLocator,uv)
+#     lims = :(getproperty($:(l),:lims))
+#     C = :(getproperty($:(l),:surf))
+#     return C
+#     # ex = :($C(first($lims),0)≈$C(last($lims),0))
+#     # ex = Expr(:call,:any,:($lims.≈uv))
+#     # ex = :(false)
+#     # return ex
+# end
 """
     update!(l::NurbsLocator,surf,t,samples=l.lims)
 
@@ -57,7 +66,7 @@ update!(l::NurbsLocator,surf,t,samples=l.lims)=(_update!(get_backend(l.lower),64
 @kernel function _update!(l::NurbsLocator{T},surf,@Const(samples),@Const(t)) where T
     # update bounding box
     l.lower .= l.upper .= surf(first(samples),t)
-    for uv in samples
+    for uv in range(l.lims...,64)
         x = surf(uv,t)
         l.lower .= min.(l.lower,x)
         l.upper .= max.(l.upper,x)
@@ -76,6 +85,8 @@ Estimate the parameter value `uv⁺ = argmin_uv (X-curve(uv,t))²` in two steps:
 function (l::NurbsLocator)(x,t)
     # check if the point is in bounding box
     inside = all(x.>l.lower) && all(x.<l.upper)
+    # if we are outside, this is sufficient
+    !inside && return 0.5
 
     # Grid search for uv within bounds
     @inline dis2(uv) = (q=x-l.surf(uv,t); q'*q)
@@ -84,8 +95,6 @@ function (l::NurbsLocator)(x,t)
         dᵢ = dis2(uvᵢ)
         dᵢ<d && (uv=uvᵢ; d=dᵢ)
     end
-    # if we are outside, this is sufficient
-    !inside && return uv
 
     # Otherwise, refine estimate with two Newton steps
     uv = l.refine(x,uv,t)
