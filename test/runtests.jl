@@ -26,6 +26,14 @@ using StaticArrays,Test
     @test d ≈ 0.1
     @test n ≈ SA[0,-1]
     @test V ≈ SA[2+U,0]
+
+    # test a periodic body
+    U=0.1; map(x,t)=(x-SA[U*t,0])/2
+    body = ParametricBody(surf,locate;perdir=(3,),map)
+    d,n,V = measure(body,SA[4U,-2.1,0.0],4.)
+    @test d ≈ 0.1
+    @test n ≈ SA[0,-1,0]
+    @test V ≈ SA[2+U,0,0]
 end
 
 @testset "HashedLocators.jl" begin

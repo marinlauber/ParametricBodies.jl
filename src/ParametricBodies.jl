@@ -22,7 +22,8 @@ import WaterLily: AbstractBody,measure,sdf,interp
     - `scale::T`: distance scaling from `ξ` to `x`.
 
 Explicitly defines a geometries by an unsteady parametric curve and optional coordinate `map`.
-The curve is currently limited to be 2D, and must wind counter-clockwise. Any distance scaling
+The curve is currently limited to be 2D, and must wind counter-clockwise, however, the curve 
+can be extruded in any direction by speficying a `perdir`. Any distance scaling
 induced by the map needs to be uniform and `scale` is computed automatically unless supplied.
 
 Example:
@@ -44,18 +45,52 @@ struct ParametricBody{T,S<:Function,L<:Union{Function,AbstractLocator},M<:Functi
     locate::L  #uv = locate(ξ,t)
     map::M     #ξ = map(x,t)
     scale::T   #|dx/dξ| = scale
+    toξ::Function   # map from the nD-Cartesian to the 2D-curve coordinate system
+    fromξ::Function # inverse map
 end
-using CUDA
-function ParametricBody(surf,locate;map=(x,t)->x,T=Float64)
+using GPUArrays
+function ParametricBody(surf,locate;perdir=(0,),map=(x,t)->x,T=Float64)
     N = length(surf(zero(T),0.))
     # Check input functions
     x,t = zero(SVector{N,T}),T(0); ξ = map(x,t)
-    @CUDA.allowscalar uv = locate(ξ,t); p = ξ-surf(uv,t)
+    @GPUArrays.allowscalar uv = locate(ξ,t); p = ξ-surf(uv,t)
     @assert isa(ξ,SVector{N,T}) "map is not type stable"
     @assert isa(uv,T) "locate is not type stable"
     @assert isa(p,SVector{N,T}) "surf is not type stable"
 
-    ParametricBody(surf,locate,map,T(get_scale(map,x)))
+    ParametricBody(surf,locate,map,T(get_scale(map,x)),toξ(x,perdir...),fromξ(x,perdir...))
+end
+"""
+Generates the function that maps from the 3D-Cartesian to the 2D-curve coordinate system
+given a periodic direction `perdir`. For 2D simulations this function returns the input.
+"""
+function toξ(x,perdir)
+    perdir == 0 && return function(x)
+        return x
+    end
+    perdir == 1 && return function(x)
+        return SA[x[2],x[3]]
+    end
+    perdir == 2 && return function(x)
+        return SA[x[1],x[3]]
+    end
+    return function(x)
+        return SA[x[1],x[2]]
+    end
+end
+function fromξ(x,perdir)
+    perdir == 0 && return function(x)
+        return x
+    end
+    perdir == 1 && return function(x)
+        SA[zero(eltype(x)),x[1],x[2]]
+    end
+    perdir == 2 && return function(x)
+        SA[x[1],zero(eltype(x)),x[2]]
+    end
+    return function(x)
+        SA[x[1],x[2],zero(eltype(x))]
+    end
 end
 
 import LinearAlgebra: det
@@ -69,12 +104,12 @@ point `x`. Both `dot(surf)` and `dot(map)` contribute to `V`.
 """
 function measure(body::ParametricBody,x,t)
     # Surf props and velocity in ξ-frame
-    d,n,uv = surf_props(body,x,t)
+    d,n,uv = surf_props(body,x,t); x = body.toξ(x)
     dξdt = ForwardDiff.derivative(t->body.surf(uv,t)-body.map(x,t),t)
 
     # Convert to x-frame with dξ/dx⁻¹ (d has already been scaled)
     dξdx = ForwardDiff.jacobian(x->body.map(x,t),x)
-    return (d,dξdx\n/body.scale,dξdx\dξdt)
+    return (d,body.fromξ(dξdx\n/body.scale),body.fromξ(dξdx\dξdt))
 end
 """
     d = sdf(body::AbstractParametricBody,x,t)
@@ -86,7 +121,7 @@ sdf(body::AbstractParametricBody,x,t) = surf_props(body,x,t)[1]
 
 function surf_props(body::ParametricBody,x,t)
     # Map x to ξ and locate nearest uv
-    ξ = body.map(x,t)
+    ξ = body.map(body.toξ(x),t)
     uv = body.locate(ξ,t)
 
     # Get normal direction and vector from surf to ξ
@@ -107,15 +142,33 @@ function norm_dir(surf,uv::Number,t)
 end
 
 Adapt.adapt_structure(to, x::ParametricBody{T,F,L}) where {T,F,L<:HashedLocator} =
-    ParametricBody(x.surf,adapt(to,x.locate),x.map,x.scale)
+    ParametricBody(x.surf,adapt(to,x.locate),x.map,x.scale,x.toξ,x.fromξ)
 
 """
     ParametricBody(surf,uv_bounds;step,t⁰,T,mem,map) <: AbstractBody
 
 Creates a `ParametricBody` with `locate=HashedLocator(surf,uv_bounds...)`.
 """
-ParametricBody(surf,uv_bounds::Tuple;step=1,t⁰=0.,T=Float64,mem=Array,map=(x,t)->x) = 
-    adapt(mem,ParametricBody(surf,HashedLocator(surf,uv_bounds;step,t⁰,T,mem);map,T))
+ParametricBody(surf,uv_bounds::Tuple;perdir=(0,),step=1,t⁰=0.,T=Float64,mem=Array,map=(x,t)->x) = 
+    adapt(mem,ParametricBody(surf,HashedLocator(surf,uv_bounds;step,t⁰,T,mem);perdir,map,T))
+# """
+#     AxisSymmetricBody{T}(surf,locate;perdir=(0,),map=(x,t)->x,scale=|∇map|⁻¹) <: AbstractBody
+
+# Creates a `ParametricBody` with `surf` and `locate` functions for axisymmetric geometries.
+# """
+# function AxisSymmetricBody(surf,uv_bounds::Tuple;step=1,t⁰=0.,T=Float64,mem=Array,map=(x,t)->x)
+#     N = length(surf(zero(T),0.))
+#     # Check input functions
+#     x,t = zero(SVector{N,T}),T(0); ξ = map(x,t)
+#     @GPUArrays.allowscalar uv = locate(ξ,t); p = ξ-surf(uv,t)
+#     @assert isa(ξ,SVector{N,T}) "map is not type stable"
+#     @assert isa(uv,T) "locate is not type stable"
+#     @assert isa(p,SVector{N,T}) "surf is not type stable"
+#     # some dummy axissymetric functions
+#     toξ(x) = SA[x[1],√(x[2]^2+x[3]^2)]
+#     fromξ(x) = SA[x[1],x[2],zero(eltype(x))]
+#     ParametricBody(surf,HashedLocator(surf,uv_bounds;step,t⁰,T,mem),map,T(get_scale(map,x)),toξ,fromξ)
+# end
 
 update!(body::ParametricBody{T,F,L},t) where {T,F,L<:HashedLocator} = 
     update!(body.locate,body.surf,t)
@@ -200,7 +253,7 @@ export DynamicBody,measure
 include("Recipes.jl")
 export f
 
-# Backward compatibility for extensions
+# Backward compatibility for extensions, for now this is useless
 if !isdefined(Base, :get_extension)
     using Requires
 end
