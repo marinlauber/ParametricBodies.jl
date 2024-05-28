@@ -62,3 +62,15 @@ new_dist(p,n) = √(p'*p) - thk/2
 DynamicBody(spline,(0,1);dist=new_dist)
 ```
 This is demonstrated in [examples/TwoD_nurbs.jl](./example/TwoD_nurbs.jl).
+
+
+### Spanwise Periodic ParametricBodies
+
+We can combine the periodic capability of `WaterLily` with a periodic `ParametricBody` defined using a 2D curve that is extruded in one of the 3 Cartesian direction. This can be very simply setup using the `perdir` argument in the `ParametricBody` constructor. For example, to define a periodic body in the `z` direction, we can do
+```julia
+circle(s,t) = SA[sin(2π*s),cos(2π*s)]
+map(x,t) = x-SA[4L,4L]
+body = ParametricBody(circle,(0,1);perdir=(3,),map)
+sim = Simulation((10L,8L,L),(U,0,0),L;ν=U*L/Re,body,perdir=(3,))
+```
+where we have used the same argument that would be used to make the `WaterLily` simulation periodic in the z-direction. This can of course be combined with a `map` function to make the body dynamic. but the important point here to observe is that the maping must also be periodic in the `z` direction and the __`map` function must return a 2D vector__. This is demonstrated in [examples/ThreeD_tandem_airfoil_spanperiodic.jl](./example/ThreeD_tandem_airfoil_spanperiodic.jl).
