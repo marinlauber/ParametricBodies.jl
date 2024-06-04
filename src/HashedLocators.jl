@@ -42,6 +42,7 @@ Adapt.adapt_structure(to, x::HashedLocator) = HashedLocator(x.refine,x.lims,adap
 function HashedLocator(curve,lims;t⁰=0,step=1,buffer=2,T=Float64,mem=Array)
     # Apply type and get refinement function
     lims,t⁰,step = T.(lims),T(t⁰),T(step)
+    lims = clamp.(lims,lims[1]+eps(T),lims[2]-eps(T))
     f = refine(curve,lims,curve(first(lims),t⁰)≈curve(last(lims),t⁰))
 
     # Get curve's bounding box
@@ -104,16 +105,16 @@ Estimate the parameter value `uv⁺ = argmin_uv (X-curve(uv,t))²` in two steps:
 1. Interploate an initial guess  `uv=l.hash(x)`. Return `uv⁺~uv` if `x` is outside the hash domain.
 2. Apply a bounded Newton step `uv⁺≈l.refine(x,uv,t)` to refine the estimate.
 """
-function (l::HashedLocator)(x,t)
+function (l::HashedLocator{T})(x,t) where T
     # Map location to hash index and clamp to within domain
     hash_index = (x-l.lower)/l.step .+ 1
     clamped = clamp.(hash_index,1,size(l.hash))
 
     # Get hashed parameter and return if index is outside domain
     uv = l.hash[round.(Int,clamped)...]
-    hash_index != clamped && return uv
+    hash_index != clamped && return clamp(uv,l.lims...)
 
     # Otherwise, refine estimate with two Newton steps
     uv = l.refine(x,uv,t)
-    return l.refine(x,uv,t)
+    return clamp(l.refine(x,uv,t),l.lims...)
 end

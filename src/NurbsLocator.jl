@@ -31,6 +31,7 @@ Adapt.adapt_structure(to, x::NurbsLocator) = NurbsLocator(x.refine,x.surf,x.lims
 function NurbsLocator(curve::NurbsCurve{n},lims;t⁰=0,step=1,buffer=2,mem=Array) where n
     # Apply type and get refinement function
     T = eltype(curve.pnts); lims,t⁰,step = T.(lims),T(t⁰),T(step)
+    lims = clamp.(lims,lims[1]+eps(T),lims[2]-eps(T))
     f = refine(curve,lims,curve(first(lims),t⁰)≈curve(last(lims),t⁰))
 
     # Get curve's bounding box
@@ -73,21 +74,24 @@ Estimate the parameter value `uv⁺ = argmin_uv (X-curve(uv,t))²` in two steps:
 2. Apply a bounded Newton step `uv⁺≈l.refine(x,uv,t)` to refine the estimate.
 """
 function (l::NurbsLocator{T})(x,t) where T
+    @inline dis2(uv) = (q=x-l.surf(uv,t); q'*q)
     # check if the point is in bounding box
     inside = all(x.>l.lower) && all(x.<l.upper)
     # if we are outside, this is sufficient
-    # !inside && return T(0.5)
-
+    if !inside 
+        d1,d2 = dis2(l.lims[1]),dis2(l.lims[2])
+        return clamp(d1/(d1+d2),l.lims...)
+    end
+    
     # Grid search for uv within bounds
-    @inline dis2(uv) = (q=x-l.surf(uv,t); q'*q)
     uv = zero(T); d = dis2(uv)
-    for uvᵢ in range(l.lims...,128)
+    for uvᵢ in range(l.lims...,64)
         dᵢ = dis2(uvᵢ)
         dᵢ<d && (uv=uvᵢ; d=dᵢ)
     end
-    !inside && return uv
+    # !inside && return clamp(uv,l.lims...)
 
     # Otherwise, refine estimate with two Newton steps
     uv = l.refine(x,uv,t)
-    return l.refine(x,uv,t)
+    return clamp(l.refine(x,uv,t),l.lims...)
 end

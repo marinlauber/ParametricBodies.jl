@@ -49,7 +49,7 @@ struct ParametricBody{T,S<:Function,L<:Union{Function,AbstractLocator},M<:Functi
     fromξ::Function # inverse map
 end
 using GPUArrays
-function ParametricBody(surf,locate;perdir=(0,),map=(x,t)->x,T=Float64)
+function ParametricBody(surf,locate::L;perdir=(0,),map=(x,t)->x,T=Float64) where {L<:AbstractLocator}
     N = length(surf(zero(T),0.))
     # Check input functions
     x,t = zero(SVector{N,T}),T(0); ξ = map(x,t)
@@ -151,24 +151,44 @@ Creates a `ParametricBody` with `locate=HashedLocator(surf,uv_bounds...)`.
 """
 ParametricBody(surf,uv_bounds::Tuple;perdir=(0,),step=1,t⁰=0.,T=Float64,mem=Array,map=(x,t)->x) = 
     adapt(mem,ParametricBody(surf,HashedLocator(surf,uv_bounds;step,t⁰,T,mem);perdir,map,T))
-# """
-#     AxisSymmetricBody{T}(surf,locate;perdir=(0,),map=(x,t)->x,scale=|∇map|⁻¹) <: AbstractBody
 
-# Creates a `ParametricBody` with `surf` and `locate` functions for axisymmetric geometries.
-# """
-# function AxisSymmetricBody(surf,uv_bounds::Tuple;step=1,t⁰=0.,T=Float64,mem=Array,map=(x,t)->x)
-#     N = length(surf(zero(T),0.))
-#     # Check input functions
-#     x,t = zero(SVector{N,T}),T(0); ξ = map(x,t)
-#     @GPUArrays.allowscalar uv = locate(ξ,t); p = ξ-surf(uv,t)
-#     @assert isa(ξ,SVector{N,T}) "map is not type stable"
-#     @assert isa(uv,T) "locate is not type stable"
-#     @assert isa(p,SVector{N,T}) "surf is not type stable"
-#     # some dummy axissymetric functions
-#     toξ(x) = SA[x[1],√(x[2]^2+x[3]^2)]
-#     fromξ(x) = SA[x[1],x[2],zero(eltype(x))]
-#     ParametricBody(surf,HashedLocator(surf,uv_bounds;step,t⁰,T,mem),map,T(get_scale(map,x)),toξ,fromξ)
-# end
+"""
+    ParaBodies(bodies::Vector{AbstractParametricBody}) <: AbstractBody
+
+Combines multiple `AbstractParametricBody` into a single body. This is usefull for constructing complex
+geometries from simpler ones.
+"""
+struct ParaBodies <: AbstractBody
+    bodies::Vector{AbstractParametricBody}
+end
+ParametricBody(b) = ParaBodies(b) # constructor is the same as standard ParametricBody
+"""
+    d,n,V = measure(b::ParaBodies,x,t)
+
+Determine the geometric properties the closest body in `b.bodies` at time `t` closest to 
+point `x`. Both `dot(body)` and `dot(map)` contribute to `V`.
+"""
+function measure(b::ParaBodies,x,t)
+    d₁,n₁,V₁ = measure(b.bodies[1],x,t)
+    for i in 2:length(b.bodies)
+        dᵢ,nᵢ,Vᵢ = measure(b.bodies[i],x,t)
+        dᵢ>d₁ && (d₁,n₁,V₁ = dᵢ,nᵢ,Vᵢ)
+    end
+    return d₁,n₁,V₁
+end
+"""
+    d = sdf(b::ParaBodies,x,t)
+
+Signed distance from `x` to closest point on the closest surf in `b.bodies` at time `t`.
+Sign depends on the winding direction of the parametric curve.
+"""
+function sdf(b::ParaBodies,x,t)
+    d₁ = sdf(b.bodies[1],x,t)
+    for i in 2:length(b.bodies)
+        d₁ = max(d₁,sdf(b.bodies[i],x,t))
+    end
+    return d₁
+end
 
 update!(body::ParametricBody{T,F,L},t) where {T,F,L<:HashedLocator} = 
     update!(body.locate,body.surf,t)
@@ -242,7 +262,7 @@ function _vforce(surf,u::AbstractArray{T,N},s::T,t,vᵢ,::Val{true},δ=1) where 
     return τ
 end
 
-export AbstractParametricBody,ParametricBody,measure,sdf,∮nds,∮τnds
+export AbstractParametricBody,ParametricBody,ParaBodies,measure,sdf,∮nds,∮τnds
 
 include("NurbsLocator.jl")
 export NurbsLocator
