@@ -12,7 +12,7 @@ export HashedLocator, refine, mymod
 include("NurbsCurves.jl")
 export NurbsCurve,BSplineCurve,interpNurbs
 
-import WaterLily: AbstractBody,measure,sdf,interp
+import WaterLily: AbstractBody,measure,sdf,interp,Flow
 """
     ParametricBody{T::Real}(surf,locate,map=(x,t)->x,scale=|∇map|⁻¹) <: AbstractBody
 
@@ -40,13 +40,14 @@ Example:
     @test V ≈ SA[-4/5,-3/5]
 """
 abstract type AbstractParametricBody <: AbstractBody end
-struct ParametricBody{T,S<:Function,L<:Union{Function,AbstractLocator},M<:Function} <: AbstractParametricBody
+struct ParametricBody{T,S<:Function,L<:Union{Function,AbstractLocator},
+                      M<:Function,P<:Function,Q<:Function} <: AbstractParametricBody
     surf::S    #ξ = surf(uv,t)
     locate::L  #uv = locate(ξ,t)
     map::M     #ξ = map(x,t)
     scale::T   #|dx/dξ| = scale
-    toξ::Function   # map from the nD-Cartesian to the 2D-curve coordinate system
-    fromξ::Function # inverse map
+    toξ::P   # map from the nD-Cartesian to the 2D-curve coordinate system
+    fromξ::Q # inverse map
 end
 using GPUArrays
 function ParametricBody(surf,locate::L;perdir=(0,),map=(x,t)->x,T=Float64) where {L<:AbstractLocator}
@@ -168,11 +169,13 @@ ParametricBody(b) = ParaBodies(b) # constructor is the same as standard Parametr
 Determine the geometric properties the closest body in `b.bodies` at time `t` closest to 
 point `x`. Both `dot(body)` and `dot(map)` contribute to `V`.
 """
-function measure(b::ParaBodies,x,t)
-    d₁,n₁,V₁ = measure(b.bodies[1],x,t)
-    for i in 2:length(b.bodies)
-        dᵢ,nᵢ,Vᵢ = measure(b.bodies[i],x,t)
-        dᵢ>d₁ && (d₁,n₁,V₁ = dᵢ,nᵢ,Vᵢ)
+function measure(body::ParaBodies,x,t)
+    d₁,n₁,V₁ = measure(body.bodies[1],x,t)
+    for i in 2:length(body.bodies)
+        dᵢ,nᵢ,Vᵢ = measure(body.bodies[i],x,t)
+        if dᵢ>d₁ 
+            d₁,n₁,V₁ = dᵢ,nᵢ,Vᵢ
+        end
     end
     return d₁,n₁,V₁
 end
@@ -188,6 +191,18 @@ function sdf(b::ParaBodies,x,t)
         d₁ = max(d₁,sdf(b.bodies[i],x,t))
     end
     return d₁
+end
+"""
+    getInterfaceForces!(forces,flow::Flow,body::ParaBodies,quadPoints)
+
+Compute the interface forces at the quadrature points `quadPoints` for each body in `body.bodies`.
+"""
+Index(Qs,i) = sum(length.(Qs[1:i-1]))+1:sum(length.(Qs[1:i]))
+function getInterfaceForces!(forces,flow::Flow{T},body::ParaBodies,quadPoints) where T
+    for (i,b) in enumerate(body.bodies)
+        I = Index(quadPoints,i)
+        forces[:,I] .= reduce(hcat,[-1.0*_pforce(b.surf,flow.p,s,zero(T),Val{false}()) for s ∈ quadPoints[i]])
+    end
 end
 
 update!(body::ParametricBody{T,F,L},t) where {T,F,L<:HashedLocator} = 
@@ -262,7 +277,7 @@ function _vforce(surf,u::AbstractArray{T,N},s::T,t,vᵢ,::Val{true},δ=1) where 
     return τ
 end
 
-export AbstractParametricBody,ParametricBody,ParaBodies,measure,sdf,∮nds,∮τnds
+export AbstractParametricBody,ParametricBody,ParaBodies,measure,sdf,∮nds,∮τnds,getInterfaceForces!
 
 include("NurbsLocator.jl")
 export NurbsLocator
