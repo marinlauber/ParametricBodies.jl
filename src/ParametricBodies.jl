@@ -192,18 +192,18 @@ function sdf(b::ParaBodies,x,t)
     end
     return d₁
 end
-"""
-    getInterfaceForces!(forces,flow::Flow,body::ParaBodies,quadPoints)
+# """
+#     getInterfaceForces!(forces,flow::Flow,body::ParaBodies,quadPoints)
 
-Compute the interface forces at the quadrature points `quadPoints` for each body in `body.bodies`.
-"""
-Index(Qs,i) = sum(length.(Qs[1:i-1]))+1:sum(length.(Qs[1:i]))
-function getInterfaceForces!(forces,flow::Flow{T},body::ParaBodies,quadPoints) where T
-    for (i,b) in enumerate(body.bodies)
-        I = Index(quadPoints,i)
-        forces[:,I] .= reduce(hcat,[-1.0*_pforce(b.surf,flow.p,s,zero(T),Val{false}()) for s ∈ quadPoints[i]])
-    end
-end
+# Compute the interface forces at the quadrature points `quadPoints` for each body in `body.bodies`.
+# """
+# Index(Qs,i) = sum(length.(Qs[1:i-1]))+1:sum(length.(Qs[1:i]))
+# function getInterfaceForces!(forces,flow::Flow{T},body::ParaBodies,quadPoints) where T
+#     for (i,b) in enumerate(body.bodies)
+#         I = Index(quadPoints,i)
+#         forces[:,I] .= reduce(hcat,[-1.0*_pforce(b.surf,flow.p,s,zero(T),Val{false}()) for s ∈ quadPoints[i]])
+#     end
+# end
 
 update!(body::ParametricBody{T,F,L},t) where {T,F,L<:HashedLocator} = 
     update!(body.locate,body.surf,t)
@@ -218,7 +218,7 @@ function _gausslegendre(N,T)
     x,w = gausslegendre(N)
     convert.(T,x),convert.(T,w)
 end
-integrate(curve::Function,lims=(0.,1.)) = integrate(ξ->1.0,curve,0.0,lims;N=N)
+integrate(curve::Function,lims=(0.,1.);N=16) = integrate(ξ->1.0,curve,0.0,lims;N=N)
 function integrate(f::Function,curve::Function,t,lims::NTuple{2,T};N=64) where T
     # integrate NURBS curve to compute integral
     uv_, w_ = _gausslegendre(N,T)
@@ -283,7 +283,7 @@ include("NurbsLocator.jl")
 export NurbsLocator
 
 include("DynamicBodies.jl")
-export DynamicBody,measure
+export DynamicBody,measure,update!
 
 include("Recipes.jl")
 export f
