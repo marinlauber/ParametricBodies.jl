@@ -161,8 +161,9 @@ geometries from simpler ones.
 """
 struct ParaBodies <: AbstractBody
     bodies::Vector{AbstractParametricBody}
+    op::Vector{Function}
 end
-ParametricBody(b) = ParaBodies(b) # constructor is the same as standard ParametricBody
+ParametricBody(b) = ParaBodies(b,repeat([+],length(b)-1)) # constructor is the same as standard ParametricBody
 """
     d,n,V = measure(b::ParaBodies,x,t)
 
@@ -192,18 +193,6 @@ function sdf(b::ParaBodies,x,t)
     end
     return d₁
 end
-# """
-#     getInterfaceForces!(forces,flow::Flow,body::ParaBodies,quadPoints)
-
-# Compute the interface forces at the quadrature points `quadPoints` for each body in `body.bodies`.
-# """
-# Index(Qs,i) = sum(length.(Qs[1:i-1]))+1:sum(length.(Qs[1:i]))
-# function getInterfaceForces!(forces,flow::Flow{T},body::ParaBodies,quadPoints) where T
-#     for (i,b) in enumerate(body.bodies)
-#         I = Index(quadPoints,i)
-#         forces[:,I] .= reduce(hcat,[-1.0*_pforce(b.surf,flow.p,s,zero(T),Val{false}()) for s ∈ quadPoints[i]])
-#     end
-# end
 
 update!(body::ParametricBody{T,F,L},t) where {T,F,L<:HashedLocator} = 
     update!(body.locate,body.surf,t)
@@ -249,23 +238,23 @@ function ∮τnds(u::AbstractArray{T},body::ParametricBody,t=0;N=64) where T
 end
 
 # pressure force on a parametric `surf` (closed) at parametric coordinate `s` and time `t`.
-function _pforce(surf,p::AbstractArray{T},s::T,t,::Val{false},δ=1) where T
+function _pforce(surf,p::AbstractArray{T},s::T,t,::Val{false},δ=2) where T
     xᵢ = surf(s,t); nᵢ = norm_dir(surf,s,t); nᵢ /= √(nᵢ'*nᵢ)
     return interp(xᵢ+δ*nᵢ,p).*nᵢ
 end
-function _pforce(surf,p::AbstractArray{T},s::T,t,::Val{true},δ=1) where T
+function _pforce(surf,p::AbstractArray{T},s::T,t,::Val{true},δ=2) where T
     xᵢ = surf(s,t); nᵢ = ParametricBodies.norm_dir(surf,s,t); nᵢ /= √(nᵢ'*nᵢ)
     return (interp(xᵢ+δ*nᵢ,p)-interp(xᵢ-δ*nᵢ,p))*nᵢ
 end
 # viscous force on a parametric `surf` (closed) at parametric coordinate `s` and time `t`.
-function _vforce(surf,u::AbstractArray{T},s::T,t,vᵢ,::Val{false},δ=1) where T
+function _vforce(surf,u::AbstractArray{T},s::T,t,vᵢ,::Val{false},δ=2) where T
     xᵢ = surf(s,t); nᵢ = norm_dir(surf,s,t); nᵢ /= √(nᵢ'*nᵢ)
     vᵢ = vᵢ .- sum(vᵢ.*nᵢ)*nᵢ # tangential comp
     uᵢ = interp(xᵢ+δ*nᵢ,u)  # prop in the field
     uᵢ = uᵢ .- sum(uᵢ.*nᵢ)*nᵢ # tangential comp
     return (uᵢ.-vᵢ)./δ # FD
 end
-function _vforce(surf,u::AbstractArray{T,N},s::T,t,vᵢ,::Val{true},δ=1) where {T,N}
+function _vforce(surf,u::AbstractArray{T,N},s::T,t,vᵢ,::Val{true},δ=2) where {T,N}
     xᵢ = surf(s,t); nᵢ = ParametricBodies.norm_dir(surf,s,t); nᵢ /= √(nᵢ'*nᵢ)
     τ = zeros(SVector{N-1,T})
     vᵢ = vᵢ .- sum(vᵢ.*nᵢ)*nᵢ
