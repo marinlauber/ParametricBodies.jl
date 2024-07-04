@@ -160,7 +160,7 @@ Combines multiple `AbstractParametricBody` into a single body. This is usefull f
 geometries from simpler ones.
 """
 struct ParaBodies <: AbstractBody
-    bodies::Vector{AbstractParametricBody}
+    bodies::Vector{AbstractBody}
     op::Vector{Function}
 end
 ParametricBody(b) = ParaBodies(b,repeat([+],length(b)-1)) # constructor is the same as standard ParametricBody
