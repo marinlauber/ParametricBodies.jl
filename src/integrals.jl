@@ -17,7 +17,7 @@ function integrate(f::Function,crv::Function,t,lims;N=64)
     scale=(last(lims)-first(lims))/2; uv_=scale*(uv_.+1); w_=scale*w_ 
     sum([f(uv)*norm(ForwardDiff.derivative(uv->crv(uv,t),uv))*w for (uv,w) in zip(uv_,w_)])
 end
-import WaterLily: pressure_force,viscous_force,pressure_moment
+# import WaterLily: pressure_force,viscous_force,pressure_moment
 """
     pressure_force(p,df,body::AbstractParametricBody,t=0,T;N)
 

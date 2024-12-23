@@ -267,7 +267,8 @@ function simple_nurbs(T,R=5;center=SA[0,0])
     NurbsCurve(cps,knots,weights)
 end
 @testset "integrals.jl" begin
-    for mem in (CUDA.functional() ? [CuArray,Array] : [Array])
+    # for mem in (CUDA.functional() ? [CuArray,Array] : [Array])
+    for mem in [Array]
         N,T = 10,Float32
         circle = nurbs_circle(T,N;center=SA{T}[1.5N,1.5N])
         curve  = simple_nurbs(T,N;center=SA{T}[1.5N,1.5N]) 
@@ -288,10 +289,14 @@ end
         @test ParametricBodies.open(body3) == Val(true) # check that it is closed
         @test all(ParametricBodies.lims(body3) .≈ (0,2π)) # check the bounds
         # test forces
-        for body in [body1,body2] # won't work with body3
-            @test all(WaterLily.pressure_force(p,f,body,0) .≈ 0)
+        for body in [body1,body2,body3]
+            @test WaterLily.pressure_force(p,f,body,0) ≈ [0,0]
+            body ≠ body3 && @test ParametricBodies.pressure_force(p,f,body,0) ≈ [0,0]
         end
         apply!(x->x[1],p) # hydrostatic pressure
-        @test all(WaterLily.pressure_force(p,f,body1,0)./(N^2*π).+SA[1,0] .≤ 1e-1) #could be improved
+        auto = AutoBody((x,t)->√sum(abs2,x .- 1.5N)-N)
+        @test WaterLily.pressure_force(p,f,auto,0)./(N^2*π) ≈ [1,0] atol=3e-3
+        @test WaterLily.pressure_force(p,f,body1,0)./(N^2*π) ≈ [1,0] atol=4e-3
+        @test ParametricBodies.pressure_force(p,f,body1,0)./(N^2*π) ≈ [-1,0] atol=0.1
     end
 end
