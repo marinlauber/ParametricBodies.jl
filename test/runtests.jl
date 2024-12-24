@@ -41,6 +41,28 @@ using CUDA
     @test all(measure(body3,SA[1.,0.,1.],0.,fastd²=1) .≈ (1,[0,0,1],[0,0,0]))
 end
 
+@testset "SMatrix 2x3" begin
+    using Random,LinearAlgebra
+    Random.seed!(123)
+    for i in 1:10
+        a = @SMatrix randn(2, 3)
+        b = @SVector randn(2)
+        @test Matrix(a)\b ≈ a\b
+    end
+
+    a = SA[1.0 1e-10 0.0; 0.0 1.0 1e-10]
+    b = SA[1.,1.]
+    @test Matrix(a)\b ≈ a\b
+
+    a = SA[1.0 2.0 3.0; 2.0 4.0 6.0]
+    b = SA[7.0, 14.0]
+    @test Matrix(a)\b ≈ a\b
+
+    
+    x = SA_F32[1 0 0; 0 1 0]\SA_F32[0,1]
+    @test @allocated(SA_F32[1 0 0; 0 1 0]\SA_F32[0,1]) <400
+end
+
 @testset "HashedLocators.jl" begin
     curve(θ,t) = SA[cos(θ+t),sin(θ+t)]
     locator = HashedLocator(curve,(0.,2π),T=Float32)
@@ -222,6 +244,15 @@ end
     map(x::SVector{3},t) = SA[x[1],√(x[2]^2+x[3]^2)]
     sphere = ParametricBody(circle;map,scale=1f0)
     @test [measure(sphere,SA[2,3,6],0)...] ≈ [0,[2,3,6]./7,[0,0,0]] atol=1e-4
+
+    # Check GPU
+    if CUDA.functional()
+        t = CUDA.zeros(2)
+        x = [SA_F32[2,3,6],SA_F32[0,3,0]] |> CuArray
+        a,b = measure.(Ref(sphere),x,t) |> Array
+        @test [a...] ≈ [0,[2,3,6]./7,[0,0,0]] atol=1e-4
+        @test all(b .≈ (-4,[0,1,0],[0,0,0]))
+    end
 end
 @testset "PlanarBodies.jl" begin
     T = Float32
