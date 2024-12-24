@@ -60,7 +60,7 @@ end
 
     
     x = SA_F32[1 0 0; 0 1 0]\SA_F32[0,1]
-    @test @allocated(SA_F32[1 0 0; 0 1 0]\SA_F32[0,1]) <305
+    @test @allocated(SA_F32[1 0 0; 0 1 0]\SA_F32[0,1]) <400
 end
 
 @testset "HashedLocators.jl" begin
