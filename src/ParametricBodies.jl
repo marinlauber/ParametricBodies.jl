@@ -58,12 +58,11 @@ sdf(body::AbstractParametricBody,x,t;kwargs...) = curve_props(body,x,t;kwargs...
     - `dotS(u,t)=derivative(t->curve(u,t),t)` time derivative of curve 
     - `locate(ξ,t)` method to find nearest parameter `u` to `ξ`
     - `map(x,t)=x` mapping from `x` to `ξ`
-    - `scale=|∇map|⁻¹` distance scaling from `ξ` to `x`
     - `thk=0` thickness offset for the signed distance
     - `boundary=true` if the curve represent a body boundary, not a space-curve
 
 Explicitly defines a geometry by an unsteady parametric curve. The curve is currently limited 
-to be univariate, and must wind counter-clockwise if closed. The optional `dotS`, `map`, `scale`, 
+to be univariate, and must wind counter-clockwise if closed. The optional `dotS`, `map`, 
 `thk` and `boundary` parameters allow for more general geometry embeddings.
 
 Example:
@@ -92,8 +91,9 @@ end
 import LinearAlgebra: det
 dmap(x,t) = x
 get_dotS(curve) = (u,t)->ForwardDiff.derivative(t->curve(u,t),t)
-get_scale(map,x::SVector{D,T}) where {D,T} = (dξdx=ForwardDiff.jacobian(x->map(x,zero(T)),x); T(abs(det(dξdx))^(-1/D)))
-ParametricBody(curve,locate;dotS=get_dotS(curve),thk=0f0,boundary=true,map=dmap,x₀=SA_F32[0,0],
+x_hat(ndims) = SVector(ntuple(i->i==1 ? 1f0 : 0f0,ndims))
+get_scale(map,x,t=0f0) = norm(ForwardDiff.jacobian(x->map(x,t),x)\x_hat(length(map(x,t))))
+ParametricBody(curve,locate;dotS=get_dotS(curve),thk=0f0,boundary=true,map=dmap,ndims=2,x₀=x_hat(ndims),
     scale=get_scale(map,x₀),T=promote_type(typeof(thk),typeof(scale)),kwargs...) = ParametricBody(curve,dotS,locate,map,T(scale),T(thk/2),boundary)
 
 function curve_props(body::ParametricBody,x,t;fastd²=Inf)

@@ -104,7 +104,7 @@ end
 
 Creates a `ParametricBody` with `locate=NurbsLocator`.
 """
-ParametricBody(curve::NurbsCurve;T=eltype(curve.pnts),kwargs...) = ParametricBody(curve,NurbsLocator(curve);T,kwargs...)
+ParametricBody(curve::NurbsCurve{N};T=eltype(curve.pnts),ndims=N,kwargs...) where N = ParametricBody(curve,NurbsLocator(curve);T,ndims,kwargs...)
 
 """
     DynamicNurbsBody(curve::NurbsCurve;kwargs...)

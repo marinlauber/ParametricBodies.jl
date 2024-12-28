@@ -241,8 +241,8 @@ end
     @test [measure(cylinder,SA[2,3,6],0)...] ≈ [√45-7,[0,3,6]./√45,[0,0,0]] atol=1e-4
 
     # Make a sphere
-    map(x::SVector{3},t) = SA[x[1],√(x[2]^2+x[3]^2)]
-    sphere = ParametricBody(circle;map,scale=1f0)
+    map(x::SVector{3},t) = SA[x[1],hypot(x[2],x[3])]
+    sphere = ParametricBody(circle;map,ndims=3) # define ndims
     @test [measure(sphere,SA[2,3,6],0)...] ≈ [0,[2,3,6]./7,[0,0,0]] atol=1e-4
 
     # Check GPU
