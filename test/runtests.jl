@@ -237,7 +237,7 @@ end
     
     # Make a cylinder
     map(x::SVector{3},t) = SA[x[2],x[3]]
-    cylinder = ParametricBody(circle;map,scale=1f0)
+    cylinder = ParametricBody(circle;map,ndims=3)
     @test [measure(cylinder,SA[2,3,6],0)...] ≈ [√45-7,[0,3,6]./√45,[0,0,0]] atol=1e-4
 
     # Make a sphere
