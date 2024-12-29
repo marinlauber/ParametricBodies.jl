@@ -91,10 +91,10 @@ end
 import LinearAlgebra: det
 dmap(x,t) = x
 get_dotS(curve) = (u,t)->ForwardDiff.derivative(t->curve(u,t),t)
-x_hat(ndims) = SVector(ntuple(i->√(1f0/ndims),ndims))
-get_scale(map,x,t=0f0) = norm(ForwardDiff.jacobian(x->map(x,t),x)\x_hat(length(map(x,t))))
+x_hat(ndims) = SVector(ntuple(i->√inv(ndims),ndims))
+get_scale(map,x,t=0) = norm(ForwardDiff.jacobian(x->map(x,t),x)\x_hat(length(map(x,t))))
 ParametricBody(curve,locate;dotS=get_dotS(curve),thk=0f0,boundary=true,map=dmap,ndims=2,x₀=x_hat(ndims),
-    scale=get_scale(map,x₀),T=promote_type(typeof(thk),typeof(scale)),kwargs...) = ParametricBody(curve,dotS,locate,map,T(scale),T(thk/2),boundary)
+    scale=get_scale(map,x₀),T=Float32,kwargs...) = ParametricBody(curve,dotS,locate,map,T(scale),T(thk/2),boundary)
 
 function curve_props(body::ParametricBody,x,t;fastd²=Inf)
     # Map x to ξ and do fast bounding box check
