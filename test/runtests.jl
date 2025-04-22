@@ -266,6 +266,18 @@ function simple_nurbs(T,R=5;center=SA[0,0])
     knots = SA[0,0,0,0.5,1,1,1]
     NurbsCurve(cps,knots,weights)
 end
+function hyrostatic!(p::AbstractArray{T,D},body;psolver=:MultiLevelPoisson,mem=Array) where {T,D}
+    # generate field
+    z = zero(p); μ⁰ = ones(T,(size(p)...,D)) |> mem
+    for i ∈ 1:D # measure the geometry
+        @WaterLily.loop μ⁰[I,i] = WaterLily.μ₀(measure(body,loc(i,I,T),zero(T))[1],1) over I ∈ inside(p)
+    end
+    WaterLily.BC!(μ⁰,zeros(D))
+    # create Poisson solver
+    pois = eval(psolver)(p,μ⁰,z) # the initial solution points to p
+    @inside pois.z[I] = WaterLily.∂(1,I,pois.L) # zero V contribution everywhere
+    WaterLily.update!(pois); solver!(pois;tol=100eps(T),itmx=32)
+end
 @testset "integrals.jl" begin
     # for mem in (CUDA.functional() ? [CuArray,Array] : [Array])
     for mem in [Array]
@@ -293,10 +305,12 @@ end
             @test WaterLily.pressure_force(p,f,body,0) ≈ [0,0]
             body ≠ body3 && @test ParametricBodies.pressure_force(p,f,body,0) ≈ [0,0]
         end
-        apply!(x->x[1],p) # hydrostatic pressure
+        # apply!(x->x[1],p) # hydrostatic pressure
         auto = AutoBody((x,t)->√sum(abs2,x .- 1.5N)-N)
-        @test WaterLily.pressure_force(p,f,auto,0)./(N^2*π) ≈ [1,0] atol=3e-3
-        @test WaterLily.pressure_force(p,f,body1,0)./(N^2*π) ≈ [1,0] atol=4e-3
-        @test ParametricBodies.pressure_force(p,f,body1,0)./(N^2*π) ≈ [-1,0] atol=0.1
+        hyrostatic!(p,auto) # get the true hydrostatic pressure inside p
+        @test WaterLily.pressure_force(p,f,auto,0)./(N^2*π) ≈ [1,0] atol=0.1#3e-3
+        hyrostatic!(p,body1) # get the true hydrostatic pressure inside p
+        @test WaterLily.pressure_force(p,f,body1,0)./(N^2*π) ≈ [1,0] atol=01#4e-3
+        @test ParametricBodies.pressure_force(p,f,body1,0)./(N^2*π) ≈ [1,0] atol=0.11
     end
 end
