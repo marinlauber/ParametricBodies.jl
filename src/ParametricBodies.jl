@@ -56,13 +56,13 @@ Example:
     @test n ≈ SA[-3/5, 4/5]
     @test V ≈ SA[-4/5,-3/5]
 """
-struct ParametricBody{T,L<:Function,S<:Function,dS<:Function,M<:Function} <: AbstractParametricBody
+struct ParametricBody{T,L<:Function,S<:Function,dS<:Function,M<:Function,dT<:Function} <: AbstractParametricBody
     curve::S    #ξ = curve(v,t)
     dotS::dS    #dξ/dt
     locate::L   #u = locate(ξ,t)
     map::M      #ξ = map(x,t)
     scale::T    #|dx/dξ| = scale
-    half_thk::T #half thickness
+    half_thk::dT #half thickness
     boundary::Bool 
 end
 # Default functions
@@ -70,16 +70,17 @@ import LinearAlgebra: det
 dmap(x,t) = x
 get_dotS(curve) = (u,t)->ForwardDiff.derivative(t->curve(u,t),t)
 get_scale(map,x::SVector{D,T}) where {D,T} = (dξdx=ForwardDiff.jacobian(x->map(x,zero(T)),x); T(abs(det(dξdx))^(-1/D)))
-ParametricBody(curve,locate;dotS=get_dotS(curve),thk=0f0,boundary=true,map=dmap,x₀=SA_F32[0,0],
-    scale=get_scale(map,x₀),T=promote_type(typeof(thk),typeof(scale)),kwargs...) = ParametricBody(curve,dotS,locate,map,T(scale),T(thk/2),boundary)
+ParametricBody(curve,locate;dotS=get_dotS(curve),thk=(u)->0f0,boundary=true,map=dmap,x₀=SA_F32[0,0],
+               scale=get_scale(map,x₀),T=promote_type(typeof(thk),typeof(scale)),kwargs...) = ParametricBody(curve,dotS,locate,map,T(scale),(u)->thk(u)/2,boundary)
 
 function curve_props(body::ParametricBody,x,t;fastd²=Inf)
     # Map x to ξ and do fast bounding box check
     ξ = body.map(x,t)
-    if isfinite(fastd²) && applicable(body.locate,ξ,t,true)
-        d = body.scale*body.locate(ξ,t,true)-body.half_thk
-        d^2>fastd² && return d,zero(x),zero(x)
-    end
+    # if isfinite(fastd²) && applicable(body.locate,ξ,t,true)
+    #     u = body.locate(ξ,t,true) ##
+    #     d = body.scale*body.locate(ξ,t,true)-body.half_thk(u)
+    #     d^2>fastd² && return d,zero(x),zero(x)
+    # end
 
     # Locate nearest u, and get vector
     u = body.locate(ξ,t)
@@ -87,9 +88,9 @@ function curve_props(body::ParametricBody,x,t;fastd²=Inf)
 
     # Get unit normal 
     n = notC¹(body.locate,u) ? hat(p) : (s=tangent(body.curve,u,t); body.boundary ? perp(s) : align(p,s))
-    
+
     # Get scaled & thinkess adjusted distance and dot(S)
-    return (body.scale*p'*n-body.half_thk,n,body.dotS(u,t))
+    return (body.scale*p'*n-body.half_thk(u),n,body.dotS(u,t))
 end
 notC¹(::Function,u) = false
 
