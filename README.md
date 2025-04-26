@@ -97,15 +97,21 @@ See the WaterLily repo and the video above for more discussion of this primary u
 
 A secondary application of the mapping function for `ParametricBodies` is to map from a 3D x-space to a 2D ξ-space, effectively extruding a 2D parametric curve into a 3D surface. For example, we can make a cylinder or sphere starting from a 2D NURBS circle using
 ```julia
+cps = SA_32[7 7 0 -7 -7 -7  0  7 7
+            0 7 7  7  0 -7 -7 -7 0] # a 2D circle
+weights = SA_32[1.,√2/2,1.,√2/2,1.,√2/2,1.,√2/2,1.] # A perfect circle requires...
+knots = SA_32[0,0,0,1/4,1/4,1/2,1/2,3/4,3/4,1,1,1]  # non-uniform knot and weight vectors
+circle = NurbsCurve(cps,knots,weights)
+
 # Make a cylinder
 map(x::SVector{3},t) = SA[x[2],x[3]] # extrude along x[1]-axis
-cylinder = ParametricBody(circle;map,scale=1f0)
+cylinder = ParametricBody(circle;map,ndims=3)  
 
 # Make a sphere
-map(x::SVector{3},t) = SA[x[1],√(x[2]^2+x[3]^2)] # revolve around x[1]-axis
-sphere = ParametricBody(circle;map,scale=1f0)
+map(x::SVector{3},t) = SA[x[1],hypot(x[2],x[3])] # revolve around x[1]-axis
+sphere = ParametricBody(circle;map,ndims=3)
 ```
-and if we started from, say, a NACA profile, the same technique could make a uniform 3D wing or a 3D air-ship hull. Note that the `scale` argument must be explicitly supplied since the determinant of this mixed dimensional `map` isn't defined. 
+and if we started from, say, a NACA profile, the same technique could make a prismatic wing or a 3D air-ship hull. Note that the `ndims` argument must be explicitly supplied to let `ParametricBodies` know that `map(x)` uses a 3D input vector.
 
 A mapping is not sufficient to make 3D planar geometries, so a simple wrapper struct `PlanarBody` is defined for this purpose. For example, a circular disk can be created using
 ```julia

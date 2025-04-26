@@ -1,4 +1,15 @@
 using FastGaussQuadrature: gausslegendre
+using LinearAlgebra: norm
+import WaterLily: interp
+using CUDA
+
+# helper functions
+perp(curve,u,t) = perp(tangent(curve,u,t))
+"""
+    _gausslegendre(N,T)
+
+Compute the Gauss-Legendre quadrature points and weights for N points
+"""
 function _gausslegendre(N,T)
     x,w = gausslegendre(N)
     convert.(T,x),convert.(T,w)
@@ -8,77 +19,57 @@ end
 
 integrate a function f(uv) along the curve
 """
-integrate(crv::Function,lims;N=16) = integrate(ξ->1.0,crv,0,lims;N)
-function integrate(f::Function,crv::Function,t,lims;N=64)
-    @assert length(crv(first(lims),t))==2 "integrate(..) can only be used for 2D curves"
+# integrate(crv::Function,lims;N=16) = integrate(ξ->1.0,crv,0,lims;N)
+function integrate(funct,field,curve,dotS,open,lim;N=64,δ=1)
+    # findout what memory tupe we are using
+    mem = eval(typeof(field).name.name)
     # integrate NURBS curve to compute integral
-    uv_, w_ = _gausslegendre(N,typeof(first(lims)))
+    uv, w = ParametricBodies._gausslegendre(N,typeof(first(lim)))
     # map onto the (uv) interval, need a weight scalling
-    scale=(last(lims)-first(lims))/2; uv_=scale*(uv_.+1); w_=scale*w_ 
-    sum([f(uv)*norm(ForwardDiff.derivative(uv->crv(uv,t),uv))*w for (uv,w) in zip(uv_,w_)])
+    scale=(last(lim)-first(lim))/2; uv=mem(scale*(uv.+1)); w=mem(scale*w)
+    # forces array
+    forces = similar(field,(2,N))
+    # integrate
+    _integrate!(get_backend(field),64)(forces,funct,curve,dotS,field,uv,open,δ,ndrange=N)
+    # sum up the forces, automatic dot product
+    forces*w |> Array
 end
-import WaterLily
+
+@kernel function _integrate!(forces,@Const(funct),@Const(curve),@Const(dotS),@Const(field),@Const(uv),@Const(open),@Const(δ))
+    # get index
+    I = @index(Global)
+    s = uv[I]
+    # physical point, diff length, unit normal
+    xᵢ = curve(s); dl = norm(ForwardDiff.derivative(m->curve(m),s))
+    nᵢ = perp(curve,s,0); nᵢ /= √(nᵢ'*nᵢ); dx = nᵢ*δ
+    # integrate on the curve
+    forces[:,I] .= funct(s,xᵢ,dx,field,nᵢ,dotS,open).*nᵢ.*dl
+end
+gs(x,n) = x - (x'*n)*n # Gram-Schmidt
+grad(u,x,dx,a) = (3u-4interp(x+dx,a)+interp(x+2dx,a))/2norm(dx)
+@inline f_pressure(s,x,dx,p,n,dotS,open) = open ? interp(x+dx,p)-interp(x-dx,p) : interp(x+dx,p)
+@inline f_viscous(s,x,dx,u,n,dotS,open) = open ? gs(grad(dotS(s,0),x,dx,u),n)+gs(grad(dotS(s,0),x,-dx,u),n) : gs(grad(dotS(s,0),x,dx,u),n)
+
+# open and close curve require different thratment
+open(b::ParametricBody{T,L};t=0) where {T,L<:NurbsLocator} =(!all(b.curve(first(b.curve.knots),t).≈b.curve(last(b.curve.knots),t)))
+open(b::ParametricBody{T,L};t=0) where {T,L<:HashedLocator} = (!all(b.curve(first(b.locate.lims),t).≈b.curve(last(b.locate.lims),t)))
+lims(b::ParametricBody{T,L};t=0) where {T,L<:NurbsLocator} = (first(b.curve.knots),last(b.curve.knots))
+lims(b::ParametricBody{T,L};t=0) where {T,L<:HashedLocator} = b.locate.lims
 """
     pressure_force(p,df,body::AbstractParametricBody,t=0,T;N)
 
 Surface normal pressure integral along the parametric curve(s)
 """
-open(b::ParametricBody{T,L};t=0) where {T,L<:NurbsLocator} = Val{(!all(b.curve(first(b.curve.knots),t).≈b.curve(last(b.curve.knots),t)))}()
-open(b::ParametricBody{T,L};t=0) where {T,L<:HashedLocator} = Val{(!all(b.curve(first(b.locate.lims),t).≈b.curve(last(b.locate.lims),t)))}()
-lims(b::ParametricBody{T,L};t=0) where {T,L<:NurbsLocator} = (first(b.curve.knots),last(b.curve.knots))
-lims(b::ParametricBody{T,L};t=0) where {T,L<:HashedLocator} = b.locate.lims
-pressure_force(a) = pressure_force(a.flow.p,a.flow.f,a.body,WaterLily.time(a.flow))
-function pressure_force(p,df,body::ParametricBody,t=0,T=promote_type(Float64,eltype(p));N=64)
-    curve(ξ,τ) = -body.map(-body.curve(ξ,τ),τ) # inverse maping
-    integrate(s->_pforce(curve,p,s,t,open(body)),curve,t,lims(body);N)
-end
+pressure_force(a) = integrate(f_pressure,a.flow.p,a.body.curve,a.body.dotS,open(a.body),lims(a.body))
 """
-    viscous_force(u,ν,df,body::AbstractParametricBody,t=0,T;N)
+viscous_force(u,ν,df,body::AbstractParametricBody,t=0,T;N)
 
 Surface normal pressure integral along the parametric curve(s)
 """
-viscous_force(a) = viscous_force(a.flow.u,a.flow.ν,a.flow.f,a.body,WaterLily.time(a.flow))
-function viscous_force(u,ν,df,body::ParametricBody,t=0,T=promote_type(Float64,eltype(u));N=64)
-    curve(ξ,τ) = -body.map(-body.curve(ξ,τ),τ) # inverse maping
-    -ν*integrate(s->_vforce(curve,u,s,t,body.dotS(s,t),open(body)),curve,t,lims(body);N)
-end
-using LinearAlgebra: cross
+viscous_force(a) = -a.flow.ν*integrate(f_viscous,a.flow.u,a.body.curve,a.body.dotS,open(a.body),lims(a.body))
 """
     pressure_moment(x₀,p,df,body::AbstractParametricBody,t=0,T;N)
 
 Surface normal pressure moment integral along the parametric curve(s)
 """
-function pressure_moment(x₀,p,df,body::ParametricBody,t=0,T=promote_type(Float64,eltype(p));N=64)
-    curve(ξ,τ) = -body.map(-body.curve(ξ,τ),τ) # inverse maping
-    -one(T)*integrate(s->cross(curve(s,t)-x₀,_pforce(curve,p,s,t,open(body))),curve,t,lims(body);N)
-end
-
-perp(curve,u,t) = perp(tangent(curve,u,t))
-# pressure force on a parametric `curve` (closed) at parametric coordinate `s` and time `t`.
-function _pforce(crv,p::AbstractArray,s,t,::Val{false};δ=1)
-    xᵢ = crv(s,t); nᵢ = perp(crv,s,t); nᵢ /= √(nᵢ'*nᵢ)
-    return interp((xᵢ.+1.5f0)+δ*nᵢ,p).*nᵢ
-end
-function _pforce(crv,p::AbstractArray,s,t,::Val{true};δ=1)
-    xᵢ = crv(s,t); nᵢ = ParametricBodies.perp(crv,s,t); nᵢ /= √(nᵢ'*nᵢ)
-    return (interp((xᵢ.+1.5f0)+δ*nᵢ,p)-interp((xᵢ.+1.5f0)-δ*nᵢ,p))*nᵢ
-end
-# viscous force on a parametric `curve` (closed) at parametric coordinate `s` and time `t`.
-function _vforce(crv,u::AbstractArray,s,t,vᵢ,::Val{false};δ=1)
-    xᵢ = crv(s,t); nᵢ = perp(crv,s,t); nᵢ /= √(nᵢ'*nᵢ)
-    vᵢ = vᵢ .- sum(vᵢ.*nᵢ)*nᵢ # tangential comp
-    uᵢ = interp((xᵢ.+1.5f0)+δ*nᵢ,u)  # prop in the field
-    uᵢ = uᵢ .- sum(uᵢ.*nᵢ)*nᵢ # tangential comp
-    return (uᵢ.-vᵢ)./δ # FD
-end
-function _vforce(crv,u::AbstractArray{T,N},s,t,vᵢ,::Val{true};δ=1) where {T,N}
-    xᵢ = crv(s,t); nᵢ = perp(crv,s,t); nᵢ /= √(nᵢ'*nᵢ)
-    τ = zeros(SVector{N-1,T})
-    vᵢ = vᵢ .- sum(vᵢ.*nᵢ)*nᵢ
-    for j ∈ [-1,1]
-        uᵢ = interp((xᵢ.+1.5f0)+j*δ*nᵢ,u)
-        uᵢ = uᵢ .- sum(uᵢ.*nᵢ)*nᵢ
-        τ = τ + (uᵢ.-vᵢ)./δ
-    end
-    return τ
-end
+pressure_moment(a,x₀) = nothing# integrate(x₀,a.flow.p,a.flow.f,a.body,WaterLily.time(a.flow))
