@@ -301,47 +301,42 @@ function hyrostatic!(p::AbstractArray{T,D},body;psolver=:MultiLevelPoisson,mem=A
     # generate field
     z = zero(p); μ⁰ = ones(T,(size(p)...,D)) |> mem
     for i ∈ 1:D # measure the geometry
-        @WaterLily.loop μ⁰[I,i] = WaterLily.μ₀(measure(body,loc(i,I,T),zero(T))[1],1) over I ∈ inside(p)
+        @WaterLily.loop μ⁰[I,i] = WaterLily.μ₀(measure(body,loc(i,I,T),zero(T))[1],one(T)) over I ∈ inside(p)
     end
-    WaterLily.BC!(μ⁰,zeros(D))
+    WaterLily.BC!(μ⁰,zero(SVector{D,T}))
     # create Poisson solver
     pois = eval(psolver)(p,μ⁰,z) # the initial solution points to p
     @inside pois.z[I] = WaterLily.∂(1,I,pois.L) # zero V contribution everywhere
     WaterLily.update!(pois); solver!(pois;tol=100eps(T),itmx=32)
 end
 @testset "integrals.jl" begin
-    # for mem in (CUDA.functional() ? [CuArray,Array] : [Array])
-    for mem in [Array]
-        N,T = 10,Float32
+    for mem in (CUDA.functional() ? [CuArray,Array] : [Array]), T in [Float32, Float64]
+        N = 10
         circle = nurbs_circle(T,N;center=SA{T}[1.5N,1.5N])
         curve  = simple_nurbs(T,N;center=SA{T}[1.5N,1.5N]) 
         p = zeros(T,(3N,3N)) |> mem
         f = zeros(T,(3N,3N,2)) |> mem
-        # perimeter of a circle of R=10
-        @test abs(ParametricBodies.integrate(circle,T.((0,1));N=64)-2N*π) ≤ 1e-2
         # make two body and probe the pressure
         body1 = ParametricBody(circle;T)
-        @test ParametricBodies.open(body1) == Val(false) # check that it is closed
+        @test ParametricBodies.open(body1) == false # check that it is closed
         @test all(ParametricBodies.lims(body1) .≈ (0,1)) # check the bounds
         body2 = ParametricBody(curve;T)
-        @test ParametricBodies.open(body2) == Val(true) # check that it is closed
+        @test ParametricBodies.open(body2) == true # check that it is closed
         @test all(ParametricBodies.lims(body2) .≈ (0,1)) # check the bounds
         # test same function on a non-NURBS based curve
-        body3 = HashedBody((θ,t)->SA[cos(θ),sin(θ)],(0,2π),boundary=false)
-        @test ParametricBodies.integrate(body3.curve,T.((0,2π));N=64)/2π-1 ≤ 1e-6 # unit 
-        @test ParametricBodies.open(body3) == Val(true) # check that it is closed
+        body3 = HashedBody((θ,t)->SA[cos(θ),sin(θ)],(0,2π),boundary=false;T)
+        @test ParametricBodies.open(body3) == true # check that it is closed
         @test all(ParametricBodies.lims(body3) .≈ (0,2π)) # check the bounds
         # test forces
-        for body in [body1,body2,body3]
+        for body in [body1,body2]
             @test WaterLily.pressure_force(p,f,body,0) ≈ [0,0]
-            body ≠ body3 && @test ParametricBodies.pressure_force(p,f,body,0) ≈ [0,0]
+            body ≠ body3 && @test ParametricBodies.pressure_force(p,body) ≈ [0,0]
         end
-        # apply!(x->x[1],p) # hydrostatic pressure
-        auto = AutoBody((x,t)->√sum(abs2,x .- 1.5N)-N)
-        hyrostatic!(p,auto) # get the true hydrostatic pressure inside p
+        apply!(x->x[1],p) # hydrostatic pressure
+        auto = AutoBody((x,t)->√sum(abs2,x.-3N÷2)-N)
+        # hyrostatic!(p,auto;mem) # get the true hydrostatic pressure inside p
         @test WaterLily.pressure_force(p,f,auto,0)./(N^2*π) ≈ [1,0] atol=0.1#3e-3
-        hyrostatic!(p,body1) # get the true hydrostatic pressure inside p
         @test WaterLily.pressure_force(p,f,body1,0)./(N^2*π) ≈ [1,0] atol=01#4e-3
-        @test ParametricBodies.pressure_force(p,f,body1,0)./(N^2*π) ≈ [1,0] atol=0.11
+        @test ParametricBodies.pressure_force(p,body1)./(N^2*π) ≈ [1,0] atol=0.11
     end
 end

@@ -1,6 +1,6 @@
 using FastGaussQuadrature: gausslegendre
-using LinearAlgebra: norm
-import WaterLily: interp
+using LinearAlgebra: norm, cross
+import WaterLily: AbstractSimulation,interp
 using CUDA
 
 # helper functions
@@ -19,12 +19,11 @@ end
 
 integrate a function f(uv) along the curve
 """
-# integrate(crv::Function,lims;N=16) = integrate(ξ->1.0,crv,0,lims;N)
 function integrate(funct,field,curve,dotS,open,lim;N=64,δ=1)
     # findout what memory tupe we are using
-    mem = eval(typeof(field).name.name)
+    mem = typeof(field).name.wrapper
     # integrate NURBS curve to compute integral
-    uv, w = ParametricBodies._gausslegendre(N,typeof(first(lim)))
+    uv, w = _gausslegendre(N,typeof(first(lim)))
     # map onto the (uv) interval, need a weight scalling
     scale=(last(lim)-first(lim))/2; uv=mem(scale*(uv.+1)); w=mem(scale*w)
     # forces array
@@ -60,16 +59,26 @@ lims(b::ParametricBody{T,L};t=0) where {T,L<:HashedLocator} = b.locate.lims
 
 Surface normal pressure integral along the parametric curve(s)
 """
-pressure_force(a) = integrate(f_pressure,a.flow.p,a.body.curve,a.body.dotS,open(a.body),lims(a.body))
+pressure_force(a::AbstractSimulation) = pressure_force(a.flow.p,a.body)
+pressure_force(p,body) = integrate(f_pressure,p,body.curve,body.dotS,open(body),lims(body))
 """
 viscous_force(u,ν,df,body::AbstractParametricBody,t=0,T;N)
 
 Surface normal pressure integral along the parametric curve(s)
 """
-viscous_force(a) = -a.flow.ν*integrate(f_viscous,a.flow.u,a.body.curve,a.body.dotS,open(a.body),lims(a.body))
+viscous_force(a::AbstractSimulation) = -a.flow.ν.*viscous_force(a.flow.u,a.body)
+viscous_force(u,body) = integrate(f_viscous,u,body.curve,body.dotS,open(body),lims(body))
 """
     pressure_moment(x₀,p,df,body::AbstractParametricBody,t=0,T;N)
 
 Surface normal pressure moment integral along the parametric curve(s)
 """
-pressure_moment(a,x₀) = nothing# integrate(x₀,a.flow.p,a.flow.f,a.body,WaterLily.time(a.flow))
+using LinearAlgebra: cross
+pressure_moment(x₀,a::AbstractSimulation) = pressure_moment(x₀,a.flow.p,a.body)
+function pressure_moment(x₀,p,body)
+    @inline function f_pmoment(s,x,dx,p,n,dotS,open)
+        r,fp = x-x₀,f_pressure(s,x,dx,p,n,dotS,open)
+        return r[1]*fp-r[2]*fp
+    end
+    integrate(f_pmoment,p,body.curve,body.dotS,open(body),lims(body))
+end
