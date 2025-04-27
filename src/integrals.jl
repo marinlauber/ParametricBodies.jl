@@ -73,9 +73,9 @@ viscous_force(u,body) = integrate(f_viscous,u,body.curve,body.dotS,open(body),li
 
 Surface normal pressure moment integral along the parametric curve(s)
 """
-using LinearAlgebra: cross
 pressure_moment(x₀,a::AbstractSimulation) = pressure_moment(x₀,a.flow.p,a.body)
 function pressure_moment(x₀,p,body)
+    # 2D only for now
     @inline function f_pmoment(s,x,dx,p,n,dotS,open)
         r,fp = x-x₀,f_pressure(s,x,dx,p,n,dotS,open)
         return r[1]*fp-r[2]*fp
