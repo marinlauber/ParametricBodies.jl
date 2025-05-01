@@ -184,8 +184,8 @@ end
 q_crv = initial_rotation(curve)
 
 struct CosseratRod{T,M<:AbstractArray{T},Sf<:AbstractArray{T},Vf<:AbstractArray{T}} <: AbstractParametricBody
-    curve :: NurbsCurve{T}
-    quarterions :: NurbsCurve{T}
+    curve :: NurbsCurve
+    quarterions :: NurbsCurve
     C :: M
     D :: M
     τ :: Sf
