@@ -1,38 +1,31 @@
-using WaterLily
-using ParametricBodies
-using StaticArrays
-using CUDA
-using WriteVTK
+using WaterLily,ParametricBodies,StaticArrays,CUDA,WriteVTK
+
 # parameters
-function dynamicSpline(;L=2^4,Re=250,U =1,ϵ=0.5,thk=2ϵ+√3,mem=Array)
+function make_sim(;L=2^4,Re=250,U =1,ϵ=1.0,thk=2ϵ+√3,mem=Array,T=Float32)
     # define a flat plat at and angle of attack
-    cps = SA[-1   0   1
-             0.5 0.25 0
-             0    0   0]*L .+ [2L,3L,8]
+    cps = SA{T}[-1   0   1
+                0.5 0.25 0
+                0    0   0]*L .+ SA{T}[2L,2L,L]
 
     # needed if control points are moved
     curve = BSplineCurve(cps;degree=2)
 
     # use BDIM-σ distance function, make a body and a Simulation
     body = DynamicNurbsBody(curve;thk=thk,boundary=false)
-    Simulation((8L,6L,16),(U,0,0),L;U,ν=U*L/Re,body,T=Float64,mem)
+    Simulation((8L,4L,2L),(U,0,0),L;U,ν=U*L/Re,body,T,mem,ϵ)
 end
 
 # make a writer with some attributes
-velocity(a::Simulation) = a.flow.u |> Array;
-pressure(a::Simulation) = a.flow.p |> Array;
-body(a::Simulation) = (measure_sdf!(a.flow.σ, a.body); 
-                       a.flow.σ |> Array;)
-custom_attrib = Dict(
-    "Velocity" => velocity,
-    "Pressure" => pressure,
-    "Body" => body
-)# this maps what to write to the name in the file
+vtk_u(a::Simulation) = a.flow.u |> Array;
+vtk_p(a::Simulation) = a.flow.p |> Array;
+vtk_d(a::Simulation) = (measure_sdf!(a.flow.σ, a.body); a.flow.σ |> Array;)
+custom_attrib = Dict("u"=>vtk_u, "p"=>vtk_p, "d"=>vtk_d)# this maps what to write to the name in the file
 
 # # intialize
-sim = dynamicSpline(mem=Array);
+sim = make_sim(;L=64,mem=CuArray);
 t₀,duration,tstep = sim_time(sim),10,0.1;
-wr = vtkWriter("ThreeD_nurbs"; attrib=custom_attrib)
+wr = vtkWriter("ThreeD_nurbs_GPU"; attrib=custom_attrib)
+Tp = eltype(sim.flow.p)
 
 # run
 for tᵢ in range(t₀,t₀+duration;step=tstep)
@@ -40,13 +33,13 @@ for tᵢ in range(t₀,t₀+duration;step=tstep)
     # update until time tᵢ in the background
     t = sum(sim.flow.Δt[1:end-1])
     while t < tᵢ*sim.L/sim.U
-        δx = SA[-1   0   1
-                0.5 0.25 0
-                0 0.08sin(2π*t/sim.L) 0.2sin(2π*t/sim.L)]*sim.L .+ [2sim.L,3sim.L,8]
+        # make it move around
+        δx = SA{Tp}[-1   0   1
+                    0.5 0.25 0
+                    0 0.2sin(2π*t/sim.L) 0.5sin(2π*t/sim.L)]*sim.L .+ SA{Tp}[2sim.L,2sim.L,sim.L]
         sim.body = update!(sim.body,δx,sim.flow.Δt[end])
-        # random update
-        measure!(sim,t)
-        mom_step!(sim.flow,sim.pois) # evolve Flow
+        # update
+        sim_step!(sim;remeasure=true)
         t += sim.flow.Δt[end]
     end
 
