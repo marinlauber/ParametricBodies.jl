@@ -286,43 +286,38 @@ using WaterLily
                 measure_sdf!(sim.flow.σ,sim.body); d = sim.flow.σ |> Array
                 I = CartesianIndex(5,5)
                 @test d[I]≈√sum(abs2,WaterLily.loc(0,I) .- dc)-5 atol=1e-6
+                @test all(WaterLily.pressure_force(sim) .≈ 0)
+                @test all(WaterLily.viscous_force(sim) .≈ 0)
             end
         end
     end
 end
-function simple_nurbs(T,R=5;center=SA[0,0])
-    cps = SA{T}[-R 0 R
-                -R 0 R].+center
-    weights = SA[1.,1.,1.]
-    knots = SA[0,0,0,0.5,1,1,1]
-    NurbsCurve(cps,knots,weights)
+function hydrostatic!(p::AbstractArray{T,D},body;psolver=:MultiLevelPoisson,mem=Array) where {T,D}
+    # generate field
+    z = zero(p); μ⁰ = ones(T,(size(p)...,D)) |> mem
+    for i ∈ 1:D # measure the geometry
+        @WaterLily.loop μ⁰[I,i] = WaterLily.μ₀(measure(body,loc(i,I),0)[1],one(T)) over I ∈ inside(p)
+    end
+    WaterLily.BC!(μ⁰,zero(SVector{D,T}))
+
+    @inside pois.z[I] = WaterLily.∂(1,I,pois.L) # zero V contribution everywhere
+
+    # create Poisson solver
+    pois = eval(psolver)(p,μ⁰,z) # the initial solution points to p
+    @inside pois.z[I] = WaterLily.∂(1,I,pois.L) # zero V contribution everywhere
+    WaterLily.update!(pois); solver!(pois;tol=100eps(T),itmx=32)
 end
-@testset "integrals.jl" begin
-    for mem in (CUDA.functional() ? [CuArray,Array] : [Array])
-        N,T = 10,Float32
+@testset "Hydrostatic pressure test" begin
+    for mem in (CUDA.functional() ? [CuArray,Array] : [Array]), T in [Float32, Float64]
+        N = 10
         circle = nurbs_circle(T,N;center=SA{T}[1.5N,1.5N])
-        curve  = simple_nurbs(T,N;center=SA{T}[1.5N,1.5N]) 
         p = zeros(T,(3N,3N)) |> mem
         f = zeros(T,(3N,3N,2)) |> mem
-        # perimeter of a circle of R=10
-        @test abs(ParametricBodies.integrate(circle,T.((0,1));N=64)-2N*π) ≤ 1e-2
         # make two body and probe the pressure
-        body1 = ParametricBody(circle;T)
-        @test ParametricBodies.open(body1) == Val(false) # check that it is closed
-        @test all(ParametricBodies.lims(body1) .≈ (0,1)) # check the bounds
-        body2 = ParametricBody(curve;T)
-        @test ParametricBodies.open(body2) == Val(true) # check that it is closed
-        @test all(ParametricBodies.lims(body2) .≈ (0,1)) # check the bounds
-        # test same function on a non-NURBS based curve
-        body3 = HashedBody((θ,t)->SA[cos(θ),sin(θ)],(0,2π),boundary=false)
-        @test ParametricBodies.integrate(body3.curve,T.((0,2π));N=64)/2π-1 ≤ 1e-6 # unit 
-        @test ParametricBodies.open(body3) == Val(true) # check that it is closed
-        @test all(ParametricBodies.lims(body3) .≈ (0,2π)) # check the bounds
-        # test forces
-        for body in [body1,body2] # won't work with body3
-            @test all(WaterLily.pressure_force(p,f,body,0) .≈ 0)
-        end
-        apply!(x->x[1],p) # hydrostatic pressure
-        @test all(WaterLily.pressure_force(p,f,body1,0)./(N^2*π).+SA[1,0] .≤ 1e-1) #could be improved
+        body = ParametricBody(circle;T)
+        # hydrostatic pressure
+        hydrostatic!(p,body;mem=mem)
+        # hyrostatic!(p,auto;mem) # get the true hydrostatic pressure inside p
+        @test WaterLily.pressure_force(p,f,body,0)./(N^2*π) ≈ [1,0] atol=0.1#3e-3
     end
 end

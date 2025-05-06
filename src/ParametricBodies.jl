@@ -122,6 +122,14 @@ align(p,s) = hat(p-(p'*s)*s)
 perp(s::SVector{2}) = SA[s[2],-s[1]]
 perp(s) = s # should never be used!
 
+# this is needed to avoid errors on GPUs
+using WaterLily
+@inline function WaterLily.nds(body::ParametricBody{T},x::SVector{D},t) where {T,D}
+    x = SVector{D,T}(x...)
+    d,n,_ = measure(body,x,t,fastd²=1)
+    n*WaterLily.kern(clamp(d,-1,1))    
+end
+
 export AbstractParametricBody,ParametricBody,sdf,measure
 
 abstract type AbstractLocator <:Function end
@@ -141,7 +149,6 @@ export PlanarBody
 
 include("Recipes.jl")
 export f
-include("integrals.jl")
 
 # Backward compatibility for extensions
 if !isdefined(Base, :get_extension)
