@@ -294,14 +294,10 @@ using WaterLily
 end
 function hydrostatic!(p::AbstractArray{T,D},body;psolver=:MultiLevelPoisson,mem=Array) where {T,D}
     # generate field
-    z = zero(p); μ⁰ = ones(T,(size(p)...,D)) |> mem
-    for i ∈ 1:D # measure the geometry
-        @WaterLily.loop μ⁰[I,i] = WaterLily.μ₀(measure(body,loc(i,I),0)[1],one(T)) over I ∈ inside(p)
-    end
+    z = zero(p); μ⁰ = zeros(T,(size(p)...,D)) |> mem
+    # fill the μ⁰ field
+    @WaterLily.loop μ⁰[Ii] = WaterLily.μ₀(sdf(body,loc(Ii,T),0),one(T)) over Ii ∈ CartesianIndices(μ⁰)
     WaterLily.BC!(μ⁰,zero(SVector{D,T}))
-
-    @inside pois.z[I] = WaterLily.∂(1,I,pois.L) # zero V contribution everywhere
-
     # create Poisson solver
     pois = eval(psolver)(p,μ⁰,z) # the initial solution points to p
     @inside pois.z[I] = WaterLily.∂(1,I,pois.L) # zero V contribution everywhere
