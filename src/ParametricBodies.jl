@@ -101,8 +101,8 @@ function curve_props(body::ParametricBody,x,t;fastd²=Inf)
     # Map x to ξ and do fast bounding box check
     ξ = body.map(x,t)
     if isfinite(fastd²) && applicable(body.locate,ξ,t,true)
-        u = body.locate(ξ,t,true)
-        d = body.scale*body.locate(ξ,t,true)-body.half_thk(u)
+        # d = body.scale*body.locate(ξ,t,true)-maximum(body.half_thk.(range(lims(body)...,10)))
+        d = body.scale*body.locate(ξ,t,true)-body.half_thk(ξ)
         d^2>fastd² && return d,zero(x),zero(x)
     end
 

@@ -31,6 +31,7 @@ function notC¹(l::NurbsLocator{C},uv) where C<:NurbsCurve{n,d} where {n,d}
     low,high = first(l.curve.knots),last(l.curve.knots)
     (uv≈low || uv≈high) ? !l.C¹end : false 
 end
+lims(b::ParametricBody{T,L}) where {T,L<:NurbsLocator} = (first(b.curve.knots),last(b.curve.knots))
 """
     (l::NurbsLocator)(x,t)
 
