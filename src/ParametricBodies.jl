@@ -1,6 +1,29 @@
 module ParametricBodies
 
 using StaticArrays,ForwardDiff
+# Non-allocating method for 2x3 SMatrix solve
+using LinearAlgebra
+import Base: \
+@inline function (\)(a::SMatrix{2,3}, b::SVector{2})
+    # columns of a'
+    a1,a2 = a[1,:],a[2,:]
+    
+    # Q,R decomposition
+    r11 = norm(a1)
+    q1 = a1/r11
+    r12 = q1'*a2
+    p = a2-r12*q1
+    r22 = norm(p) < eps(r11) ? one(r11) : norm(p)
+    q2 = p/r22
+
+    # forward substitution to solve v = R'\b
+    v1 = b[1]/r11
+    v2 = (b[2]-r12*v1)/r22
+
+    # return solution x = Qv 
+    return q1*v1+q2*v2
+end
+
 import WaterLily: AbstractBody,measure,sdf,interp
 
 abstract type AbstractParametricBody <: AbstractBody end
@@ -35,12 +58,11 @@ sdf(body::AbstractParametricBody,x,t;kwargs...) = curve_props(body,x,t;kwargs...
     - `dotS(u,t)=derivative(t->curve(u,t),t)` time derivative of curve 
     - `locate(ξ,t)` method to find nearest parameter `u` to `ξ`
     - `map(x,t)=x` mapping from `x` to `ξ`
-    - `scale=|∇map|⁻¹` distance scaling from `ξ` to `x`
     - `thk=0` thickness offset for the signed distance
     - `boundary=true` if the curve represent a body boundary, not a space-curve
 
 Explicitly defines a geometry by an unsteady parametric curve. The curve is currently limited 
-to be univariate, and must wind counter-clockwise if closed. The optional `dotS`, `map`, `scale`, 
+to be univariate, and must wind counter-clockwise if closed. The optional `dotS`, `map`, 
 `thk` and `boundary` parameters allow for more general geometry embeddings.
 
 Example:
@@ -69,9 +91,10 @@ end
 import LinearAlgebra: det
 dmap(x,t) = x
 get_dotS(curve) = (u,t)->ForwardDiff.derivative(t->curve(u,t),t)
-get_scale(map,x::SVector{D,T}) where {D,T} = (dξdx=ForwardDiff.jacobian(x->map(x,zero(T)),x); T(abs(det(dξdx))^(-1/D)))
-ParametricBody(curve,locate;dotS=get_dotS(curve),thk=(u)->0f0,boundary=true,map=dmap,x₀=SA_F32[0,0],
-               scale=get_scale(map,x₀),T=promote_type(typeof(thk),typeof(scale)),kwargs...) = ParametricBody(curve,dotS,locate,map,T(scale),(u)->thk(u)/2,boundary)
+x_hat(ndims) = SVector(ntuple(i->√inv(ndims),ndims))
+get_scale(map,x,t=0) = norm(ForwardDiff.jacobian(x->map(x,t),x)\x_hat(length(map(x,t))))
+ParametricBody(curve,locate;dotS=get_dotS(curve),thk=(u)->0f0,boundary=true,map=dmap,ndims=2,x₀=x_hat(ndims),
+               scale=get_scale(map,x₀),T=Float32,kwargs...) = ParametricBody(curve,dotS,locate,map,T(scale),(u)->thk(u)/2,boundary)
 
 function curve_props(body::ParametricBody,x,t;fastd²=Inf)
     # Map x to ξ and do fast bounding box check
@@ -119,7 +142,6 @@ export PlanarBody
 
 include("Recipes.jl")
 export f
-include("integrals.jl")
 
 # Backward compatibility for extensions
 if !isdefined(Base, :get_extension)
