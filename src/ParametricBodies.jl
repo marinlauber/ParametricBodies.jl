@@ -94,16 +94,17 @@ get_dotS(curve) = (u,t)->ForwardDiff.derivative(t->curve(u,t),t)
 x_hat(ndims) = SVector(ntuple(i->√inv(ndims),ndims))
 get_scale(map,x,t=0) = norm(ForwardDiff.jacobian(x->map(x,t),x)\x_hat(length(map(x,t))))
 ParametricBody(curve,locate;dotS=get_dotS(curve),thk=(u)->0f0,boundary=true,map=dmap,ndims=2,x₀=x_hat(ndims),
-               scale=get_scale(map,x₀),T=Float32,kwargs...) = ParametricBody(curve,dotS,locate,map,T(scale),(u)->thk(u)/2,boundary)
-
+               scale=get_scale(map,x₀),T=Float32,kwargs...) = ParametricBody(curve,dotS,locate,map,T(scale),make_func(thk),boundary)
+make_func(a::Function) = (s)->a(s)/2
+make_func(a::Number) = (s)->a/2
 function curve_props(body::ParametricBody,x,t;fastd²=Inf)
     # Map x to ξ and do fast bounding box check
     ξ = body.map(x,t)
-    # if isfinite(fastd²) && applicable(body.locate,ξ,t,true)
-    #     u = body.locate(ξ,t,true) ##
-    #     d = body.scale*body.locate(ξ,t,true)-body.half_thk(u)
-    #     d^2>fastd² && return d,zero(x),zero(x)
-    # end
+    if isfinite(fastd²) && applicable(body.locate,ξ,t,true)
+        u = body.locate(ξ,t,true)
+        d = body.scale*body.locate(ξ,t,true)-body.half_thk(u)
+        d^2>fastd² && return d,zero(x),zero(x)
+    end
 
     # Locate nearest u, and get vector
     u = body.locate(ξ,t)
