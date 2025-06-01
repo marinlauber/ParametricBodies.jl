@@ -1,25 +1,21 @@
 """
     NurbsLocator(curve::NurbsCurve)
 
-NURBS-specific locator function. Loops through the spline sections, locating points accurately 
-using inverse cubic interpolation if it's possible for that to be the closest section.
+NURBS-specific locator function. Loops through the spline sections, to find an inital guess
+based on the `degree=1` (straight-line) version, and then refine. Unlike `HashedLocator`
+this locator doesn't need to be initialized.
 """
-struct NurbsLocator{C<:NurbsCurve,S<:SVector} <: AbstractLocator
+struct NurbsLocator{C<:NurbsCurve,F<:Function} <: AbstractLocator
     curve::C
     C¹end::Bool
-    C::S
-    R::S
+    refine::F
 end
 
 function NurbsLocator(curve::NurbsCurve)
-    # Check ends
     low,high = first(curve.knots),last(curve.knots)
     dc(u) = ForwardDiff.derivative(curve,u)
-    C¹end = curve(low)≈curve(high) && dc(low)≈dc(high)
-    # Control-point bounding box 
-    ex = extrema(curve.pnts,dims=2)
-    low,high = SVector(first.(ex)),SVector(last.(ex))
-    NurbsLocator(curve,C¹end,0.5f0*(low+high),0.5f0(high-low))
+    NurbsLocator(curve,curve(low)≈curve(high) && dc(low)≈dc(high), # closed C¹ curve?
+        refine(curve,(low,high),curve(low)≈curve(high)))     # Newton step refinement
 end
 Adapt.adapt_structure(to, x::NurbsLocator) = NurbsLocator(x.curve,x.C¹end,x.C,x.R)
 
@@ -34,70 +30,29 @@ end
 """
     (l::NurbsLocator)(x,t)
 
-Estimate the parameter value `u⁺ = argmin_u (x-l.curve(u))²` for a NURBS by looping through the 
-spline segments. `t` is unused.
+Estimate the parameter value `u⁺ = argmin_u (x-l.curve(u))²` for a NURBS in two steps
+1. The nearest point `u` on the `degree=1` version of the curve is found. Return `u⁺=u` if `fast`.
+2. `refine` this guess until the change in `u` is negligible. 
 """
-function (l::NurbsLocator{C})(x,t,fast=false;tol=5f-3,itmx=2degree) where C<:NurbsCurve{n,degree} where {n,degree}
-    fast && return √sum(abs2,max.(0,abs.(x-l.C)-l.R))
-    degree==1 && return lin_loc(l,x)
-
-    # location and Dual distance function
-    uv(i) = l.curve.knots[degree+i+1]
-    dis2(u) = fdual(u->sum(abs2,x-l.curve(u)),u)  
-
-    # Locate closest segment
-    u = b = dis2(uv(0))
-    for i in 1:length(l.curve.wgts)-degree
-        a = b; b = dis2(uv(i))
-        a==b && continue
-        uᵢ = davidon(dis2,a,b;fmax=2u.f,tol,itmx)
-        uᵢ.f<u.f && (u=uᵢ) # Replace current best
-    end; u.x               # Return location
-end
-# Returns x=argument, f=function value(x) and ∂=df/dx(x) as a named tuple
-using ForwardDiff: Dual,Tag,value,partials
-function fdual(f::F,x::R) where {F<:Function,R<:AbstractFloat}
-    T = typeof(Tag(f,R))
-    fx = f(Dual{T}(x,one(R)))
-    (x=x,f=value(fx),∂=partials(T,fx,1))
-end
-# Inversed Cubic Interpolation minimizer
-davidon(f,a::Number,b::Number;kwargs...) = (ff(x)=fdual(f,x); davidon(ff,ff(a),ff(b);kwargs...).x)
-@inline function davidon(f,a,b;tol=√eps(typeof(a.x)),∂tol=0,fmax=Inf,itmx=1000)
-    (a,b) = a.f<b.f ? (a,b) : (b,a) # a is current minimizer
-    u,v = inv_cubic(f,a,b,tol)      # first refinement
-    u.f<fmax && for _ in 1:itmx     # requires accurate search
-        (abs(u.x-v.x) ≤ 2tol || abs(u.∂) ≤ ∂tol ||(u,v)==(a,b)) && break
-        a,b = u,v
-        u,v = inv_cubic(f,a,b,tol)  # keep refining bracket
-    end; u # return minimizer
-end
-function inv_cubic(f::F,a,b,tol) where F
-    Δ = b.x-a.x
-    v = a.∂+b.∂-3(b.f-a.f)/Δ; w = v^2-a.∂*b.∂
-    w < tol && return a,b    # done: co-linear!
-    w = copysign(√w,Δ); q = (b.∂+w-v)/(b.∂-a.∂+2w)
-    !(0<q<1) && return a,b   # done: outside the bracket!
-    margin = max(0.1f0,tol/abs(Δ))
-    c = f(b.x-Δ*clamp(q,margin,1-margin))
-    c.f > b.f && return a,b  # fail: regression
-    c.f > a.f && return a,c  # save minimizer
-    c,(c.∂*Δ<0 ? b : a)      # pick "downhill" bracket
+function (l::NurbsLocator{C})(x,t,fast=false) where C<:NurbsCurve{n,degree} where {n,degree}
+    uv,fuv = lin_loc(l,x)
+    degree == 1 && return uv
+    fast && return √fuv
+    for _ in 1:5
+        uv,done = l.refine(x,uv,t); done && break
+    end; uv
 end
 function lin_loc(l::NurbsLocator,x)
-    uv(i) = l.curve.knots[1+i]
-    dis2(u) = (x=u,f=sum(abs2,x-l.curve(u)))
-
-    # Locate closest segment
-    u = dis2(uv(1)); b = l.curve(uv(1))
-    for i in 1:length(l.curve.wgts)-1
-        a = b; b = l.curve(uv(i+1))
+    pnts = l.curve.pnts; n = size(pnts,2)-1
+    b = pnts[:,1]; u = (x=zero(eltype(pnts)),f=sum(abs2,x-b))
+    for i in 1:n
+        a = b; b = pnts[:,i+1]
         a==b && continue
-        s = b-a                            # tangent
-        p = clamp(((x-a)'*s)/(s'*s),0,1)   # projected distance
-        uᵢ = dis2(uv(i)+(uv(i+1)-uv(i))*p) # segment min
+        s = b-a                                # tangent
+        p = clamp(((x-a)'*s)/(s'*s),0,1)       # perp distance along s
+        uᵢ = (x=(i-1+p)/n,f=sum(abs2,x-a-s*p)) # segment minimizer
         uᵢ.f<u.f && (u=uᵢ) # Replace current best
-    end; u.x               # Return location
+    end; u
 end
 """
     ParametricBody(curve::NurbsCurve;kwargs...)

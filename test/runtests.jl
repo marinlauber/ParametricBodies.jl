@@ -107,8 +107,7 @@ end
     @test [measure(body,SA[-0.3,-0.4],0.)...] ≈ [-0.5,[-3/5,-4/5],[4/5,-3/5]] rtol=1e-4
 
     # model arc as space-curve with finite thickness
-    thk = 0.2
-    body = HashedBody(curve,(0.,π/2);step,buffer,T=Float64,thk,boundary=false)
+    body = HashedBody(curve,(0.,π/2);step=0.2,buffer=1,T=Float64,thk=0.2,boundary=false)
     @test [measure(body,SA[0.7,-0.4],0.)...] ≈ [0.4,[-3/5,-4/5],[0,1]] rtol=1e-4
     @test measure(body,SA[0.4,0.3],0.)[2] ≈ [-4/5,-3/5] rtol=1e-4
 end
@@ -157,7 +156,7 @@ end
 
     # Wrap the shape function inside the parametric body class and check measurements
     body = HashedBody(circle, (0,1));
-    @test [measure(body,SA[-6,0],0)...] ≈ [1,[-1,0],[0,0]]
+    @test [measure(body,SA[-6,0],0)...] ≈ [1,[-1,0],[0,0]] rtol=1e-6
     @test [measure(body,SA[ 5,5],0)...] ≈ [5√2-5,[ √2/2,√2/2],[0,0]] rtol=1e-6
     @test [measure(body,SA[-5,5],0)...] ≈ [5√2-5,[-√2/2,√2/2],[0,0]] rtol=1e-6
 
@@ -170,11 +169,6 @@ end
     @test all(reduce(hcat,nurbs.(s,0.0)).-pnts.<10eps(eltype(pnts)))
 end
 @testset "NurbsLocator.jl" begin
-    # Check davidon minimizer
-    @test davidon(x->(x+3)*(x-1)^2,-2.,2.) ≈ 1
-    @test davidon(x->-log(x)/x,1.,10.) ≈ exp(1)
-    @test davidon(x->cos(x)+cos(3x)/3,0.,1.75π) ≈ π
-
     # define a circle
     T = Float32
     circle = nurbs_circle(T)
@@ -193,10 +187,6 @@ end
         u = locate.(x,t)
         @test u|>Array ≈ [1/8,1/4]
     end
-
-    # Test fast measure
-    @test locate.C≈[0,0]
-    @test locate.R≈[5,5]
 
     @test [measure(body,SA[5,5],0,fastd²=2)...]≈[5√2-5,[0,0],[0,0]] rtol=1e-6 # inside BBox but outside d²
     @test [measure(body,SA[6,8],0,fastd²=2)...]≈[√10,[0,0],[0,0]] rtol=1e-6   # outside BBox (bounded d²)

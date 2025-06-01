@@ -2,7 +2,7 @@ using Adapt,KernelAbstractions
 """
     HashedLocator
 
-    - `refine<:Function`` Performs bounded Newton root-finding step
+    - `refine<:Function` Performs bounded Newton root-finding step
     - `lims::NTuple{2,T}:` limits of the `uv` parameter
     - `hash<:AbstractArray{T,2}:` Hash to supply good IC to `refine`
     - `lower::SVector{2,T}:` bottom corner of the hash in ξ-space
@@ -10,7 +10,7 @@ using Adapt,KernelAbstractions
 
 Type to preform efficient and fairly stable `locate`ing on parametric curves. Newton's method is fast, 
 but can be very unstable for general parametric curves. This is mitigated by supplying a close initial 
-`uv` guess by interpolating `hash``, and by bounding the derivative adjustment in the Newton `refine`ment.
+`uv` guess by interpolating `hash`, and by bounding the derivative adjustment in the Newton `refine`ment.
 
 ----
 
@@ -68,9 +68,12 @@ function refine(curve,lims,closed)::Function
     dcurve(uv,t) = ForwardDiff.derivative(uv->curve(uv,t),uv)
     align(X,uv,t) = (X-curve(uv,t))'*dcurve(uv,t)
     dalign(X,uv,t) = ForwardDiff.derivative(uv->align(X,uv,t),uv)
-    return function(X,uv,t) # Newton step to alignment root
-        step=align(X,uv,t)*clamp(1/dalign(X,uv,t),-2,2)
-        ifelse(isnan(step),uv,ifelse(closed,mymod(uv-step,lims...),clamp(uv-step,lims...)))
+    mx = (lims[2]-lims[1])/25; mn = mx/100
+    return function(X,uv::T,t) where T # step to alignment root
+        a,da = align(X,uv,t),dalign(X,uv,t)
+        step = da > -eps(T) ? -copysign(mx,a) : clamp(a/da,-mx,mx)
+        new = closed ? mymod(uv-step,lims...) : clamp(uv-step,lims...)
+        ifelse(isnan(step),uv,new),abs(new-uv)<mn
     end
 end
 notC¹(l::HashedLocator,uv) = any(uv.≈l.lims)
@@ -95,7 +98,7 @@ update!(l::HashedLocator,curve,t,samples=l.lims)=(_update!(get_backend(l.hash),6
     end
     
     # Refine estimate with clamped Newton step
-    l.hash[I] = l.refine(x,uv,t)
+    l.hash[I] = l.refine(x,uv,t)[1]
 end
 
 """
@@ -114,9 +117,10 @@ function (l::HashedLocator)(x,t)
     uv = l.hash[round.(Int,clamped)...]
     hash_index != clamped && return uv
 
-    # Otherwise, refine estimate with two Newton steps
-    uv = l.refine(x,uv,t)
-    return l.refine(x,uv,t)
+    # Otherwise, refine estimate
+    for _ in 1:5
+        uv,done = l.refine(x,uv,t); done && break
+    end; uv
 end
 
 """
