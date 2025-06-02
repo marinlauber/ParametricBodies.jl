@@ -38,10 +38,9 @@ Estimate the parameter value `u⁺ = argmin_u (x-l.curve(u))²` for a NURBS in t
 1. The nearest point `u` on the `degree=1` version of the curve is found. Return `u⁺=u` if `fast`.
 2. `refine` this guess until the change in `u` is negligible. 
 """
-function (l::NurbsLocator{C})(x,t,fast=false) where C<:NurbsCurve{n,degree} where {n,degree}
-    uv,fuv = lin_loc(l,x)
+function (l::NurbsLocator{C})(x,t) where C<:NurbsCurve{n,degree} where {n,degree}
+    uv = lin_loc(l,x)
     degree == 1 && return uv
-    fast && return √fuv
     for _ in 1:5
         uv,done = l.refine(x,uv,t); done && break
     end; uv
@@ -56,7 +55,7 @@ function lin_loc(l::NurbsLocator,x)
         p = clamp(((x-a)'*s)/(s'*s),0,1)       # perp distance along s
         uᵢ = (x=(i-1+p)/n,f=sum(abs2,x-a-s*p)) # segment minimizer
         uᵢ.f<u.f && (u=uᵢ) # Replace current best
-    end; u
+    end; u.x
 end
 """
     ParametricBody(curve::NurbsCurve;kwargs...)

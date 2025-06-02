@@ -99,10 +99,10 @@ ParametricBody(curve,locate;dotS=get_dotS(curve),thk=0f0,boundary=true,map=dmap,
 function curve_props(body::ParametricBody,x,t;fastd²=Inf)
     # Map x to ξ and do fast bounding box check
     ξ = body.map(x,t)
-    if isfinite(fastd²) && applicable(body.locate,ξ,t,true)
-        d = body.scale*body.locate(ξ,t,true)-body.half_thk
-        d^2>fastd² && return d,zero(ξ),zero(ξ)
-    end
+    # if isfinite(fastd²) && applicable(body.locate,ξ,t,true)
+    #     d = body.scale*body.locate(ξ,t,true)-body.half_thk
+    #     d^2>fastd² && return d,zero(ξ),zero(ξ)
+    # end
 
     # Locate nearest u, and get vector
     u = body.locate(ξ,t)
