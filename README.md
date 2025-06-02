@@ -62,7 +62,12 @@ pnts = SA[0. 3. -1. -4  -4.
 nurbs = interpNurbs(pnts;p=3) # fit a cubic NurbsCurve through the points
 body = ParametricBody(nurbs)
 ```
-An efficient and accurate `NurbsLocator` is created automatically for `NurbsCurve`s. However, it is not as fast as a `HashedLocator`. If speed is a limiting factor, you can always use `body = HashedBody(nurbs,(0,1))` to create a fast locator, although it may not be as accurate.
+An efficient and accurate `NurbsLocator` is created automatically for `NurbsCurve`s. This should be prefered over `HashedLocator(nurbs,(0,1))`, especially for `degree=1` splines featuring sharp corners.
+```julia
+M = BSplineCurve(SA_F32[1 1 0 -1 -1;0 1 1/2 1 0];degree=1) # Make Linear B-Spline
+letter = ParametricBody(M,thk=2,boundary=false)            # Automatically makes a NURBSLocator
+# Don't use HashedBody(M,(0,1),step=0.1,thk=2,boundary=false)
+```
 
 You can also create a NURBS by supplying the control points, knots and weights directly. For example, the code below defines a 3D torus using a NURBS to describe the major circle of radius 7, and thickening the space-curve with a minor radius of 1.
 ```julia

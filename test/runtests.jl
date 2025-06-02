@@ -188,8 +188,9 @@ end
     end
 
     @test [measure(body,SA[5,5],0,fastd²=2)...]≈[5√2-5,[0,0],[0,0]] rtol=1e-6 # inside BBox but outside d²
-    @test [measure(body,SA[6,8],0,fastd²=2)...]≈[√10,[0,0],[0,0]] rtol=1e-6 broken=true  # outside BBox (bounded d²)
+    @test [measure(body,SA[6,8],0,fastd²=2)...]≈[5,[0,0],[0,0]] rtol=1e-6     # outside BBox & d² but still good
     @test [measure(body,SA[6,0],0,fastd²=2)...]≈[1,[1,0],[0,0]] rtol=1e-6     # outside BBox but inside d²
+    @test [measure(body,SA[0.75,1],0,fastd²=2)...]≈[-3.75,[0,0],[0,0]] rtol=1e-1 # outside d² but correct sign
 
     # Check DynamicNurbsBody
     body = DynamicNurbsBody(circle)

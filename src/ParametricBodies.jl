@@ -97,26 +97,20 @@ ParametricBody(curve,locate;dotS=get_dotS(curve),thk=0f0,boundary=true,map=dmap,
     scale=get_scale(map,x₀),T=Float32,kwargs...) = ParametricBody(curve,dotS,locate,map,T(scale),T(thk/2),boundary)
 
 function curve_props(body::ParametricBody,x,t;fastd²=Inf)
-    # Map x to ξ and do fast bounding box check
+    # Map x to ξ, locate nearest u (quickly if applicable), and get vector
     ξ = body.map(x,t)
-    # if isfinite(fastd²) && applicable(body.locate,ξ,t,true)
-    #     d = body.scale*body.locate(ξ,t,true)-body.half_thk
-    #     d^2>fastd² && return d,zero(ξ),zero(ξ)
-    # end
-
-    # Locate nearest u, and get vector
-    u = body.locate(ξ,t)
+    u = applicable(body.locate,ξ,t,fastd²) ? body.locate(ξ,t,fastd²/body.scale^2) : body.locate(ξ,t)
     p = ξ-body.curve(u,t)
 
-    # Get unit normal
-    n = if body.boundary # has signed normal
+    # Get outward unit normal
+    n = if body.boundary # outward = RHS of the tangent vector
         if C¹(body.locate,u)
             perp(hat(tangent(body.curve,u,t))) # easy peasy
-        else # not so easy...
-            s = sum(tangent.(body.curve,eachside(body.locate,u),t)) # corner average tangent
-            sign(perp(s)'p)*hat(p)                                  # signed corner-normal
+        else # Set n s.t d=n'p even on corners/end-points...
+            s = sum(tangent.(body.curve,eachside(body.locate,u),t)) # mean tangent
+            sign(perp(s)'p)*hat(p)                                  # set sign
         end
-    else # unsigned normal towards p
+    else # outward = towards p
         notC¹(body.locate,u) ? hat(p) : align(p,hat(tangent(body.curve,u,t)))
     end
     
