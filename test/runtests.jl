@@ -238,17 +238,17 @@ end
     closedM3 = ParametricBody(BSplineCurve(SA_F32[0 1 1 0 -1 -1 0;0 0 1 1/2 1 0 0],degree=2)) # C¹ end
     @test [measure(closedM3,SA[-e,-1],0f0)...]≈[1,[0,-1],[0,0]] # outside end-point corner
 end
-@testset "Extruded Bodies" begin
+@testset "Swept Bodies" begin
     circle = nurbs_circle(Float32,7)
     
     # Make a cylinder
-    map(x::SVector{3},t) = SA[x[2],x[3]]
-    cylinder = ParametricBody(circle;map,ndims=3)
+    extrude(x::SVector{3},t) = SA[x[2],x[3]]
+    cylinder = ParametricBody(circle;map=extrude,ndims=3)
     @test [measure(cylinder,SA[2,3,6],0)...] ≈ [√45-7,[0,3,6]./√45,[0,0,0]] atol=1e-4
 
     # Make a sphere
-    map(x::SVector{3},t) = SA[x[1],hypot(x[2],x[3])]
-    sphere = ParametricBody(circle;map,ndims=3) # define ndims
+    revolve(x::SVector{3},t) = SA[x[1],hypot(x[2],x[3])]
+    sphere = ParametricBody(circle;map=revolve,ndims=3) # define ndims
     @test [measure(sphere,SA[2,3,6],0)...] ≈ [0,[2,3,6]./7,[0,0,0]] atol=1e-4
 
     # Check GPU
