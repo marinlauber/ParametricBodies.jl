@@ -14,10 +14,10 @@ end
 function NurbsLocator(curve::NurbsCurve)
     low,high = first(curve.knots),last(curve.knots)
     dc(u) = ForwardDiff.derivative(curve,u)
-    NurbsLocator(curve,curve(low)≈curve(high) && dc(low)≈dc(high), # closed C¹ curve?
-        refine(curve,(low,high),curve(low)≈curve(high)))     # Newton step refinement
+    C¹end = curve(low)≈curve(high) && dc(low)≈dc(high) # closed C¹ curve?
+    NurbsLocator(curve,C¹end,refine(curve,(low,high),C¹end))
 end
-Adapt.adapt_structure(to, x::NurbsLocator) = NurbsLocator(x.curve,x.C¹end,x.C,x.R)
+Adapt.adapt_structure(to, x::NurbsLocator) = NurbsLocator(x.curve,x.C¹end,x.refine)
 
 update!(l::NurbsLocator,curve,t) = l=NurbsLocator(curve) # just make a new locator
 
@@ -27,6 +27,11 @@ function notC¹(l::NurbsLocator{C},uv) where C<:NurbsCurve{n,d} where {n,d}
     low,high = first(l.curve.knots),last(l.curve.knots)
     (uv≈low || uv≈high) ? !l.C¹end : false 
 end
+function eachside(l::NurbsLocator,uv,s=√eps(typeof(uv)))
+    low,high = first(l.curve.knots),last(l.curve.knots)
+    l.curve.pnts[:,1] ≈ l.curve.pnts[:,end] ? mymod.(uv .+(-s,s),low,high) : clamp.(uv .+(-s,s),low,high)
+end
+
 """
     (l::NurbsLocator)(x,t)
 

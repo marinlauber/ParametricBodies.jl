@@ -221,6 +221,23 @@ end
         @test all(a .≈ (1,[0,0,1],[0,0,0]))
         @test all(b .≈ (5√2-6,[√2/2,√2/2,0],[0,0,0]))
     end
+
+    # Check (non)convex corners
+    e = √eps(Float32)
+    openM = ParametricBody(BSplineCurve(SA_F32[1 1 0 -1 -1;0 1 1/2 1 0],degree=1))
+    @test [measure(openM,SA[1-e,-1],0f0)...]≈[-1,[0,1],[0,0]] # just inside end-point
+    @test [measure(openM,SA[1+e,-1],0f0)...]≈[ 1,[0,-1],[0,0]] # just outside end-point
+    @test [measure(openM,SA[0,e],0f0)...]≈[-0.5,[0,1],[0,0]] # inside concave corner
+    @test [measure(openM,SA[2+e,2],0f0)...]≈[√2,[√2/2,√2/2],[0,0]] # outside convex corner
+    hashM = HashedBody(BSplineCurve(SA_F32[1 1 0 -1 -1;0 1 1/2 1 0],degree=1),(0,1),step=0.1) # doesn't know where knots are!
+    @test [measure(hashM,SA[1-e,-1],0f0)...]≈[-1,[0,1],[0,0]] # end-point still works
+    @test [measure(hashM,SA[2+e,2],0f0)...]≈[√2,[√2/2,√2/2],[0,0]] broken = true # "internal" corners may not!!
+    closedM = ParametricBody(BSplineCurve(SA_F32[-1 1 1 0 -1 -1;0 0 1 1/2 1 0],degree=1))
+    @test [measure(closedM,SA[-2-e,-1],0f0)...]≈[√2,[-√2/2,-√2/2],[0,0]] # outside end-point corner
+    closedM2 = ParametricBody(BSplineCurve(SA_F32[-1 1 1 0 -1 -1;0 0 1 1/2 1 0],degree=2)) # still has C⁰ end
+    @test [measure(closedM2,SA[-2-e,-1],0f0)...]≈[√2,[-√2/2,-√2/2],[0,0]] # outside end-point corner
+    closedM3 = ParametricBody(BSplineCurve(SA_F32[0 1 1 0 -1 -1 0;0 0 1 1/2 1 0 0],degree=2)) # C¹ end
+    @test [measure(closedM3,SA[-e,-1],0f0)...]≈[1,[0,-1],[0,0]] # outside end-point corner
 end
 @testset "Extruded Bodies" begin
     circle = nurbs_circle(Float32,7)

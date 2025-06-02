@@ -108,13 +108,22 @@ function curve_props(body::ParametricBody,x,t;fastd²=Inf)
     u = body.locate(ξ,t)
     p = ξ-body.curve(u,t)
 
-    # Get unit normal 
-    n = notC¹(body.locate,u) ? hat(p) : (s=tangent(body.curve,u,t); body.boundary ? perp(s) : align(p,s))
+    # Get unit normal
+    n = if body.boundary # has signed normal
+        if C¹(body.locate,u)
+            perp(tangent(body.curve,u,t)) # easy peasy
+        else # not so easy...
+            s = sum(tangent.(body.curve,eachside(body.locate,u),t)) # corner average tangent
+            sign(perp(s)'p)*hat(p)                                  # signed corner-normal
+        end
+    else # unsigned normal towards p
+        notC¹(body.locate,u) ? hat(p) : align(p,tangent(body.curve,u,t))
+    end
     
     # Get scaled & thinkess adjusted distance and dot(S)
     return (body.scale*p'*n-body.half_thk,n,body.dotS(u,t))
 end
-notC¹(::Function,u) = false
+notC¹(::Function,u) = false; C¹(f,u) = !notC¹(f,u)
 
 hat(p) = p/√(eps(eltype(p))+p'*p)
 tangent(curve,u,t) = hat(ForwardDiff.derivative(u->curve(u,t),u))

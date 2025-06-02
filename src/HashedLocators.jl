@@ -37,13 +37,16 @@ struct HashedLocator{T,F<:Function,A<:AbstractArray{T,2}} <: AbstractLocator
     hash::A
     lower::SVector{2,T}
     step::T
+    closed::Bool
 end
-Adapt.adapt_structure(to, x::HashedLocator) = HashedLocator(x.refine,x.lims,adapt(to,x.hash),x.lower,x.step)
+Adapt.adapt_structure(to, x::HashedLocator) = HashedLocator(x.refine,x.lims,adapt(to,x.hash),x.lower,x.step,x.closed)
 
 function HashedLocator(curve,lims;t⁰=0,step=1,buffer=2,T=Float32,mem=Array,kwargs...)
     # Apply type and get refinement function
     lims,t⁰,step = T.(lims),T(t⁰),T(step)
-    f = refine(curve,lims,curve(first(lims),t⁰)≈curve(last(lims),t⁰))
+    closed = curve(first(lims),t⁰)≈curve(last(lims),t⁰)
+    du(u) = ForwardDiff.derivative(u->curve(u,t⁰),u)
+    f = refine(curve,lims,closed && du(first(lims))≈du(last(lims)))
 
     # Get curve's bounding box
     samples = range(lims...,64)
@@ -58,7 +61,7 @@ function HashedLocator(curve,lims;t⁰=0,step=1,buffer=2,T=Float32,mem=Array,kwa
 
     # Allocate hash and struct, and update hash
     hash = fill(first(lims),Int.((upper-lower) .÷ step .+ (1+2buffer))...) |> mem
-    l=adapt(mem,HashedLocator{T,typeof(f),typeof(hash)}(f,lims,hash,lower.-buffer*step,step))
+    l=adapt(mem,HashedLocator{T,typeof(f),typeof(hash)}(f,lims,hash,lower.-buffer*step,step,closed))
     update!(l,curve,t⁰,samples)
 end
 
@@ -77,6 +80,7 @@ function refine(curve,lims,closed)::Function
     end
 end
 notC¹(l::HashedLocator,uv) = any(uv.≈l.lims)
+eachside(l::HashedLocator,uv,s=√eps(typeof(uv))) = l.closed ? mymod.(uv .+(-s,s),l.lims...) : clamp.(uv .+(-s,s),l.lims...)
 
 """
     update!(l::HashedLocator,curve,t,samples=l.lims)
