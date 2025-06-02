@@ -45,8 +45,7 @@ function HashedLocator(curve,lims;t⁰=0,step=1,buffer=2,T=Float32,mem=Array,kwa
     # Apply type and get refinement function
     lims,t⁰,step = T.(lims),T(t⁰),T(step)
     closed = curve(first(lims),t⁰)≈curve(last(lims),t⁰)
-    du(u) = ForwardDiff.derivative(u->curve(u,t⁰),u)
-    f = refine(curve,lims,closed && du(first(lims))≈du(last(lims)))
+    f = refine(curve,lims,closed && tangent(curve,first(lims),t⁰)≈tangent(curve,last(lims),t⁰))
 
     # Get curve's bounding box
     samples = range(lims...,64)
@@ -68,8 +67,7 @@ end
 @inline mymod(x,low,high) = low+mod(x-low,high-low)
 function refine(curve,lims,closed)::Function
     # uv⁺ = argmin_uv (X-curve(uv,t))² -> alignment(X,uv⁺,t))=0
-    dcurve(uv,t) = ForwardDiff.derivative(uv->curve(uv,t),uv)
-    align(X,uv,t) = (X-curve(uv,t))'*dcurve(uv,t)
+    align(X,uv,t) = (X-curve(uv,t))'*tangent(curve,uv,t)
     dalign(X,uv,t) = ForwardDiff.derivative(uv->align(X,uv,t),uv)
     mx = (lims[2]-lims[1])/25; mn = mx/100
     return function(X,uv::T,t) where T # step to alignment root

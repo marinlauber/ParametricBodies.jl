@@ -13,8 +13,7 @@ end
 
 function NurbsLocator(curve::NurbsCurve)
     low,high = first(curve.knots),last(curve.knots)
-    dc(u) = ForwardDiff.derivative(curve,u)
-    C¹end = curve(low)≈curve(high) && dc(low)≈dc(high) # closed C¹ curve?
+    C¹end = curve(low)≈curve(high) && tangent(curve,low,0)≈tangent(curve,high,0) # closed C¹ curve?
     NurbsLocator(curve,C¹end,refine(curve,(low,high),C¹end))
 end
 Adapt.adapt_structure(to, x::NurbsLocator) = NurbsLocator(x.curve,x.C¹end,x.refine)

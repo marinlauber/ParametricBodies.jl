@@ -137,9 +137,8 @@ end
     @test all([cross(square(s,0.),square(s+0.1,0.))>0 for s in range(0,.9,10)])
 
     # check derivatives
-    dcurve(u) = ForwardDiff.derivative(u->square(u,0),u)
-    @test dcurve(0f0) ≈ [0,40]
-    @test dcurve(0.5f0) ≈ [0,-40]
+    @test ParametricBodies.tangent(square,0f0,0) ≈ [0,40]
+    @test ParametricBodies.tangent(square,0.5f0,0) ≈ [0,-40]
 
     # Wrap the shape function inside the parametric body class and check measurements
     body = HashedBody(square, (0,1));
