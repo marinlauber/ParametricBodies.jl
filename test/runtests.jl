@@ -107,8 +107,7 @@ end
     @test [measure(body,SA[-0.3,-0.4],0.)...] ≈ [-0.5,[-3/5,-4/5],[4/5,-3/5]] rtol=1e-4
 
     # model arc as space-curve with finite thickness
-    thk = 0.2
-    body = HashedBody(curve,(0.,π/2);step,buffer,T=Float64,thk,boundary=false)
+    body = HashedBody(curve,(0.,π/2);step=0.2,buffer=1,T=Float64,thk=0.2,boundary=false)
     @test [measure(body,SA[0.7,-0.4],0.)...] ≈ [0.4,[-3/5,-4/5],[0,1]] rtol=1e-4
     @test measure(body,SA[0.4,0.3],0.)[2] ≈ [-4/5,-3/5] rtol=1e-4
 end
@@ -138,9 +137,8 @@ end
     @test all([cross(square(s,0.),square(s+0.1,0.))>0 for s in range(0,.9,10)])
 
     # check derivatives
-    dcurve(u) = ForwardDiff.derivative(u->square(u,0),u)
-    @test dcurve(0f0) ≈ [0,40]
-    @test dcurve(0.5f0) ≈ [0,-40]
+    @test ParametricBodies.tangent(square,0f0,0) ≈ [0,40]
+    @test ParametricBodies.tangent(square,0.5f0,0) ≈ [0,-40]
 
     # Wrap the shape function inside the parametric body class and check measurements
     body = HashedBody(square, (0,1));
@@ -157,7 +155,7 @@ end
 
     # Wrap the shape function inside the parametric body class and check measurements
     body = HashedBody(circle, (0,1));
-    @test [measure(body,SA[-6,0],0)...] ≈ [1,[-1,0],[0,0]]
+    @test [measure(body,SA[-6,0],0)...] ≈ [1,[-1,0],[0,0]] rtol=1e-6
     @test [measure(body,SA[ 5,5],0)...] ≈ [5√2-5,[ √2/2,√2/2],[0,0]] rtol=1e-6
     @test [measure(body,SA[-5,5],0)...] ≈ [5√2-5,[-√2/2,√2/2],[0,0]] rtol=1e-6
 
@@ -170,11 +168,6 @@ end
     @test all(reduce(hcat,nurbs.(s,0.0)).-pnts.<10eps(eltype(pnts)))
 end
 @testset "NurbsLocator.jl" begin
-    # Check davidon minimizer
-    @test davidon(x->(x+3)*(x-1)^2,-2.,2.) ≈ 1
-    @test davidon(x->-log(x)/x,1.,10.) ≈ exp(1)
-    @test davidon(x->cos(x)+cos(3x)/3,0.,1.75π) ≈ π
-
     # define a circle
     T = Float32
     circle = nurbs_circle(T)
@@ -194,13 +187,10 @@ end
         @test u|>Array ≈ [1/8,1/4]
     end
 
-    # Test fast measure
-    @test locate.C≈[0,0]
-    @test locate.R≈[5,5]
-
     @test [measure(body,SA[5,5],0,fastd²=2)...]≈[5√2-5,[0,0],[0,0]] rtol=1e-6 # inside BBox but outside d²
-    @test [measure(body,SA[6,8],0,fastd²=2)...]≈[√10,[0,0],[0,0]] rtol=1e-6   # outside BBox (bounded d²)
+    @test [measure(body,SA[6,8],0,fastd²=2)...]≈[5,[0,0],[0,0]] rtol=1e-6     # outside BBox & d² but still good
     @test [measure(body,SA[6,0],0,fastd²=2)...]≈[1,[1,0],[0,0]] rtol=1e-6     # outside BBox but inside d²
+    @test [measure(body,SA[0.75,1],0,fastd²=2)...]≈[-3.75,[0,0],[0,0]] rtol=1e-1 # outside d² but correct sign
 
     # Check DynamicNurbsBody
     body = DynamicNurbsBody(circle)
@@ -231,18 +221,35 @@ end
         @test all(a .≈ (1,[0,0,1],[0,0,0]))
         @test all(b .≈ (5√2-6,[√2/2,√2/2,0],[0,0,0]))
     end
+
+    # Check (non)convex corners
+    e = √eps(Float32)
+    openM = ParametricBody(BSplineCurve(SA_F32[1 1 0 -1 -1;0 1 1/2 1 0],degree=1))
+    @test [measure(openM,SA[1-e,-1],0f0)...]≈[-1,[0,1],[0,0]] # just inside end-point
+    @test [measure(openM,SA[1+e,-1],0f0)...]≈[ 1,[0,-1],[0,0]] # just outside end-point
+    @test [measure(openM,SA[0,e],0f0)...]≈[-0.5,[0,1],[0,0]] # inside concave corner
+    @test [measure(openM,SA[2+e,2],0f0)...]≈[√2,[√2/2,√2/2],[0,0]] # outside convex corner
+    hashM = HashedBody(BSplineCurve(SA_F32[1 1 0 -1 -1;0 1 1/2 1 0],degree=1),(0,1),step=0.1) # doesn't know where knots are!
+    @test [measure(hashM,SA[1-e,-1],0f0)...]≈[-1,[0,1],[0,0]] # end-point still works
+    @test [measure(hashM,SA[2+e,2],0f0)...]≈[√2,[√2/2,√2/2],[0,0]] broken = true # "internal" corners may not!!
+    closedM = ParametricBody(BSplineCurve(SA_F32[-1 1 1 0 -1 -1;0 0 1 1/2 1 0],degree=1))
+    @test [measure(closedM,SA[-2-e,-1],0f0)...]≈[√2,[-√2/2,-√2/2],[0,0]] # outside end-point corner
+    closedM2 = ParametricBody(BSplineCurve(SA_F32[-1 1 1 0 -1 -1;0 0 1 1/2 1 0],degree=2)) # still has C⁰ end
+    @test [measure(closedM2,SA[-2-e,-1],0f0)...]≈[√2,[-√2/2,-√2/2],[0,0]] # outside end-point corner
+    closedM3 = ParametricBody(BSplineCurve(SA_F32[0 1 1 0 -1 -1 0;0 0 1 1/2 1 0 0],degree=2)) # C¹ end
+    @test [measure(closedM3,SA[-e,-1],0f0)...]≈[1,[0,-1],[0,0]] # outside end-point corner
 end
-@testset "Extruded Bodies" begin
+@testset "Swept Bodies" begin
     circle = nurbs_circle(Float32,7)
     
     # Make a cylinder
-    map(x::SVector{3},t) = SA[x[2],x[3]]
-    cylinder = ParametricBody(circle;map,ndims=3)
+    extrude(x::SVector{3},t) = SA[x[2],x[3]]
+    cylinder = ParametricBody(circle;map=extrude,ndims=3)
     @test [measure(cylinder,SA[2,3,6],0)...] ≈ [√45-7,[0,3,6]./√45,[0,0,0]] atol=1e-4
 
     # Make a sphere
-    map(x::SVector{3},t) = SA[x[1],hypot(x[2],x[3])]
-    sphere = ParametricBody(circle;map,ndims=3) # define ndims
+    revolve(x::SVector{3},t) = SA[x[1],hypot(x[2],x[3])]
+    sphere = ParametricBody(circle;map=revolve,ndims=3) # define ndims
     @test [measure(sphere,SA[2,3,6],0)...] ≈ [0,[2,3,6]./7,[0,0,0]] atol=1e-4
 
     # Check GPU
@@ -305,15 +312,14 @@ function hydrostatic!(p::AbstractArray{T,D},body;psolver=:MultiLevelPoisson,mem=
 end
 @testset "Hydrostatic pressure test" begin
     for mem in (CUDA.functional() ? [CuArray,Array] : [Array]), T in [Float32, Float64]
-        N = 10
-        circle = nurbs_circle(T,N;center=SA{T}[1.5N,1.5N])
-        p = zeros(T,(3N,3N)) |> mem
-        f = zeros(T,(3N,3N,2)) |> mem
-        # make two body and probe the pressure
-        body = ParametricBody(circle;T)
-        # hydrostatic pressure
-        hydrostatic!(p,body;mem=mem)
-        # hyrostatic!(p,auto;mem) # get the true hydrostatic pressure inside p
-        @test WaterLily.pressure_force(p,f,body,0)./(N^2*π) ≈ [1,0] atol=0.1#3e-3
+        N = 8; n = 3N+2
+        p = zeros(T,(n,n)) |> mem
+        f = zeros(T,(n,n,2)) |> mem
+        # make two body and check the hydrostatic pressure force
+        circle = nurbs_circle(T,N;center=SA[1.5N,1.5N])
+        for body in [HashedBody(circle,(0,1)),ParametricBody(circle)]
+            hydrostatic!(p,body;mem)
+            @test WaterLily.pressure_force(p,f,body,0)./(N^2*π) ≈ [1,0] atol=2e-3
+        end
     end
 end
