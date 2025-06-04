@@ -135,8 +135,8 @@ function HashedBody(curve,lims::Tuple;T=Float32,map=dmap,kwargs...)
     wcurve(u::U,t::T) where {U,T} = SVector{2,promote_type(U,T)}(curve(u,t))
     wmap(x::SVector{n,X},t::T) where {n,X,T} = SVector{n,promote_type(X,T)}(map(x,t))
 
-    locate = HashedLocator(wcurve,T.(lims);kwargs...)
-    ParametricBody(wcurve,locate;map=wmap,kwargs...)
+    locate = HashedLocator(wcurve,T.(lims);T,kwargs...)
+    ParametricBody(wcurve,locate;map=wmap,T,kwargs...)
 end
 Adapt.adapt_structure(to, x::ParametricBody{T,L}) where {T,L<:HashedLocator} =
     ParametricBody(x.curve,x.dotS,adapt(to,x.locate),x.map,x.scale,x.half_thk,x.boundary)

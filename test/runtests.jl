@@ -315,9 +315,9 @@ end
         N = 8; n = 3N+2
         p = zeros(T,(n,n)) |> mem
         f = zeros(T,(n,n,2)) |> mem
-        # make two body and check the hydrostatic pressure force
-        circle = nurbs_circle(T,N;center=SA[1.5N,1.5N])
-        for body in [HashedBody(circle,(0,1)),ParametricBody(circle)]
+        # make body and check the hydrostatic pressure force
+        circle = nurbs_circle(T,N;center=SA[3N÷2,3N÷2])
+        for body in [HashedBody(circle,(0,1);T,mem),ParametricBody(circle)]
             hydrostatic!(p,body;mem)
             @test WaterLily.pressure_force(p,f,body,0)./(N^2*π) ≈ [1,0] atol=2e-3
         end
