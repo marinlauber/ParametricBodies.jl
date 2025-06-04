@@ -31,6 +31,7 @@ function eachside(l::NurbsLocator,uv,s=√eps(typeof(uv)))
     l.curve.pnts[:,1] ≈ l.curve.pnts[:,end] ? mymod.(uv .+(-s,s),low,high) : clamp.(uv .+(-s,s),low,high)
 end
 
+lims(b::ParametricBody{T,L}) where {T,L<:NurbsLocator} = (first(b.curve.knots),last(b.curve.knots))
 """
     (l::NurbsLocator)(x,t)
 

@@ -39,6 +39,13 @@ using CUDA
     
     # "fast" is ignored (without error) by custom locator
     @test all(measure(body3,SA[1.,0.,1.],0.,fastd²=1) .≈ (1,[0,0,1],[0,0,0]))
+
+    # test variable thickness body, circle with a variable thickness around it
+    wave(u)=0.2+0.2*sin(u)
+    body4 = ParametricBody(curve3,locate3;boundary=false,thk=wave)
+    @test [measure(body4,SA[3.,4.,0.],0.)...]≈[4-wave(atan(4,3))/2,[3/5,4/5,0],[0,0,0]]
+    @test [measure(body4,SA[-.3,-.4,0.],0.)...]≈[0.5-wave(atan(-.4,-.3))/2,[3/5,4/5,0],[0,0,0]]
+    @test [measure(body4,SA[1.,0.,1.],0.)...]≈[1-wave(0)/2,[0,0,1],[0,0,0]]
 end
 
 @testset "SMatrix 2x3" begin

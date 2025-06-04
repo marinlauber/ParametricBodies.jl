@@ -79,6 +79,7 @@ function refine(curve,lims,closed)::Function
 end
 notC¹(l::HashedLocator,uv) = any(uv.≈l.lims)
 eachside(l::HashedLocator,uv,s=√eps(typeof(uv))) = l.closed ? mymod.(uv .+(-s,s),l.lims...) : clamp.(uv .+(-s,s),l.lims...)
+lims(b::ParametricBody{T,L}) where {T,L<:HashedLocator} = b.locate.lims
 
 """
     update!(l::HashedLocator,curve,t,samples=l.lims)

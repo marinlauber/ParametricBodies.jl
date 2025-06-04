@@ -78,13 +78,13 @@ Example:
     @test n ≈ SA[-3/5, 4/5]
     @test V ≈ SA[-4/5,-3/5]
 """
-struct ParametricBody{T,L<:Function,S<:Function,dS<:Function,M<:Function} <: AbstractParametricBody
+struct ParametricBody{T,L<:Function,S<:Function,dS<:Function,M<:Function,dT<:Function} <: AbstractParametricBody
     curve::S    #ξ = curve(v,t)
     dotS::dS    #dξ/dt
     locate::L   #u = locate(ξ,t)
     map::M      #ξ = map(x,t)
     scale::T    #|dx/dξ| = scale
-    half_thk::T #half thickness
+    half_thk::dT #half thickness
     boundary::Bool 
 end
 # Default functions
@@ -93,9 +93,10 @@ dmap(x,t) = x
 get_dotS(curve) = (u,t)->ForwardDiff.derivative(t->curve(u,t),t)
 x_hat(ndims) = SVector(ntuple(i->√inv(ndims),ndims))
 get_scale(map,x,t=0) = norm(ForwardDiff.jacobian(x->map(x,t),x)\x_hat(length(map(x,t))))
-ParametricBody(curve,locate;dotS=get_dotS(curve),thk=0f0,boundary=true,map=dmap,ndims=2,x₀=x_hat(ndims),
-    scale=get_scale(map,x₀),T=Float32,kwargs...) = ParametricBody(curve,dotS,locate,map,T(scale),T(thk/2),boundary)
-
+ParametricBody(curve,locate;dotS=get_dotS(curve),thk=(u)->0f0,boundary=true,map=dmap,ndims=2,x₀=x_hat(ndims),
+               scale=get_scale(map,x₀),T=Float32,kwargs...) = ParametricBody(curve,dotS,locate,map,T(scale),make_func(thk),boundary)
+make_func(a::Function) = (s)->a(s)/2
+make_func(a::Number) = (s)->a/2
 function curve_props(body::ParametricBody,x,t;fastd²=Inf)
     # Map x to ξ, locate nearest u (quickly if applicable), and get vector
     ξ = body.map(x,t)
@@ -115,7 +116,7 @@ function curve_props(body::ParametricBody,x,t;fastd²=Inf)
     end
     
     # Get scaled & thinkess adjusted distance and dot(S)
-    return (body.scale*p'*n-body.half_thk,n,body.dotS(u,t))
+    return (body.scale*p'*n-body.half_thk(u),n,body.dotS(u,t))
 end
 notC¹(::Function,u) = false; C¹(f,u) = !notC¹(f,u)
 

@@ -1,8 +1,5 @@
 using RecipesBase: @recipe, @series
 
-lims(b::ParametricBody{T,L}) where {T,L<:NurbsLocator} = (first(b.curve.knots),last(b.curve.knots))
-lims(b::ParametricBody{T,L}) where {T,L<:HashedLocator} = b.locate.lims
-
 """
     f(C::NurbsCurve, N::Integer=100)
 
