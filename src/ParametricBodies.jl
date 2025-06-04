@@ -98,28 +98,30 @@ ParametricBody(curve,locate;dotS=get_dotS(curve),thk=(u)->0f0,boundary=true,map=
 make_func(a::Function) = (s)->a(s)/2
 make_func(a::Number) = (s)->a/2
 function curve_props(body::ParametricBody,x,t;fastd²=Inf)
-    # Map x to ξ and do fast bounding box check
+    # Map x to ξ, locate nearest u (quickly if applicable), and get vector
     ξ = body.map(x,t)
-    if isfinite(fastd²) && applicable(body.locate,ξ,t,true)
-        # d = body.scale*body.locate(ξ,t,true)-maximum(body.half_thk.(range(lims(body)...,10)))
-        d = body.scale*body.locate(ξ,t,true)-body.half_thk(ξ)
-        d^2>fastd² && return d,zero(x),zero(x)
-    end
-
-    # Locate nearest u, and get vector
-    u = body.locate(ξ,t)
+    u = applicable(body.locate,ξ,t,fastd²) ? body.locate(ξ,t,fastd²/body.scale^2) : body.locate(ξ,t)
     p = ξ-body.curve(u,t)
 
-    # Get unit normal 
-    n = notC¹(body.locate,u) ? hat(p) : (s=tangent(body.curve,u,t); body.boundary ? perp(s) : align(p,s))
-
+    # Get outward unit normal
+    n = if body.boundary # outward = RHS of the tangent vector
+        if C¹(body.locate,u)
+            perp(hat(tangent(body.curve,u,t))) # easy peasy
+        else # Set n s.t d=n'p even on corners/end-points...
+            s = sum(tangent.(body.curve,eachside(body.locate,u),t)) # mean tangent
+            sign(perp(s)'p)*hat(p)                                  # set sign
+        end
+    else # outward = towards p
+        notC¹(body.locate,u) ? hat(p) : align(p,hat(tangent(body.curve,u,t)))
+    end
+    
     # Get scaled & thinkess adjusted distance and dot(S)
     return (body.scale*p'*n-body.half_thk(u),n,body.dotS(u,t))
 end
-notC¹(::Function,u) = false
+notC¹(::Function,u) = false; C¹(f,u) = !notC¹(f,u)
 
 hat(p) = p/√(eps(eltype(p))+p'*p)
-tangent(curve,u,t) = hat(ForwardDiff.derivative(u->curve(u,t),u))
+tangent(curve,u,t) = ForwardDiff.derivative(u->curve(u,t),u)
 align(p,s) = hat(p-(p'*s)*s)
 perp(s::SVector{2}) = SA[s[2],-s[1]]
 perp(s) = s # should never be used!
