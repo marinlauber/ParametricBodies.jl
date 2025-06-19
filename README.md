@@ -57,7 +57,7 @@ Note that a `HashedLocator` knows nothing about the details of the `curve`, and 
 
 ### NurbsCurve & Locator
 
-A NURBS (Non-Uniform Rational B-Spline) based `NurbsCurve` struct make both the definition and location process more simple, and extends to 3D space-curves. For example, given a matrix of 2D points `pnts` along a desired curve, we can define a body easily
+A NURBS (Non-Uniform Rational B-Spline) based `NurbsCurve` struct simplifies the definition and location process, and extends easily to 3D space-curves. For example, given a matrix of 2D points `pnts` along a desired curve, we can define a body easily
 ```julia
 pnts = SA[0. 3. -1. -4  -4.
           0. 4.  4.  0. -3.]
