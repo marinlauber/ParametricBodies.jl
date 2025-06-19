@@ -69,12 +69,12 @@ function refine(curve,lims,closed)::Function
     # uv⁺ = argmin_uv (X-curve(uv,t))² -> alignment(X,uv⁺,t))=0
     align(X,uv,t) = (X-curve(uv,t))'*tangent(curve,uv,t)
     dalign(X,uv,t) = ForwardDiff.derivative(uv->align(X,uv,t),uv)
-    mx = (lims[2]-lims[1])/25; mn = mx/100
+    mx = (lims[2]-lims[1])/20
     return function(X,uv::T,t) where T # step to alignment root
         a,da = align(X,uv,t),dalign(X,uv,t)
         step = da > -eps(T) ? -copysign(mx,a) : clamp(a/da,-mx,mx)
         new = closed ? mymod(uv-step,lims...) : clamp(uv-step,lims...)
-        ifelse(isnan(step),uv,new),abs(new-uv)<mn
+        ifelse(isnan(step),uv,new),abs(new-uv)<0.01mx,abs(new-uv)<0.1mx
     end
 end
 notC¹(l::HashedLocator,uv) = any(uv.≈l.lims)
@@ -121,8 +121,8 @@ function (l::HashedLocator)(x,t)
     hash_index != clamped && return uv
 
     # Otherwise, refine estimate
-    for _ in 1:5
-        uv,done = l.refine(x,uv,t); done && break
+    for _ in 1:10
+        uv,done,_ = l.refine(x,uv,t); done && break
     end; uv
 end
 

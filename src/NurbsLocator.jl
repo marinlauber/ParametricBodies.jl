@@ -42,9 +42,9 @@ Estimate the parameter value `u⁺ = argmin_u (x-l.curve(u))²` for a NURBS in t
 function (l::NurbsLocator{C})(x,t,fastd²=Inf) where C<:NurbsCurve{n,degree} where {n,degree}
     u = lin_loc(l,x)
     degree == 1 && return u
-    for i in 4:-1:0
-        u,done = l.refine(x,u,t)
-        (done || isfinite(fastd²) && sum(abs2,l.curve(u)-x)≥1.4f0^i*fastd²) && break
+    for _ in 1:5
+        u,done,close = l.refine(x,u,t)
+        (done || close && isfinite(fastd²) && sum(abs2,l.curve(u)-x)≥fastd²) && break
     end; u
 end
 function lin_loc(l::NurbsLocator,x)
