@@ -88,7 +88,7 @@ update!(l::HashedLocator,curve,t,samples=l.lims)=(_update!(get_backend(l.hash),6
     end
     
     # Refine estimate once
-    l.hash[I] = l.refine(x,uv,t;itmx=1)
+    l.hash[I] = l.refine(uv,x,t;itmx=1)
 end
 
 """
@@ -107,7 +107,7 @@ function (l::HashedLocator)(x,t;fastd²=Inf)
     uv = l.hash[round.(Int,clamped)...]
 
     # Return it if index is outside domain. Otherwise, refine estimate
-    hash_index != clamped ? uv : l.refine(x,uv,t;fastd²)
+    hash_index != clamped ? uv : l.refine(uv,x,t;fastd²)
 end
 
 """

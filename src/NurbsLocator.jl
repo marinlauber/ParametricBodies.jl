@@ -52,7 +52,7 @@ function (l::NurbsLocator{C})(x,t;fastd²=Inf) where C<:NurbsCurve{N,degree} whe
         d²ᵢ<d² && (u=uᵢ;d²=d²ᵢ)              # update if uᵢ is closests
     end
     # Return if degree=1, otherwise refine
-    degree == 1 ? u : l.refine(x,u,t;fastd²)
+    degree == 1 ? u : l.refine(u,x,t;fastd²)
 end
 """
     ParametricBody(curve::NurbsCurve;kwargs...)

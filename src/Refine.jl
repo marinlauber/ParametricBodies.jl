@@ -1,9 +1,9 @@
 """
     refine(curve,lims,closed)::Function
 
-Returns a `function(X::AbstractVector,u₀,t)` which finds `u⁺ = argmin(d²(u)=|curve(u,t)-X|²)` by solving
+Returns a `function(u₀,x,t)` which finds `u⁺ = argmin(d²(u)=|curve(u,t)-x|²)` by solving
 
-    d²′ = (curve(u⁺,t)-X)'*tangent(curve,u⁺,t) = 0
+    d²′ = (curve(u⁺,t)-x)'*tangent(curve,u⁺,t) = 0
 
 starting from an initial guess `u₀`. The function attempts to Newton step to the root, falling back on 
 gradient descent if `d²′′<0`. The resulting minimizer respects `u⁺ ∈ lims` and `closed` curves.
@@ -17,15 +17,15 @@ gradient descent if `d²′′<0`. The resulting minimizer respects `u⁺ ∈ li
     - `stpmd=stpmx/10`: Step size below which `d² ≥ fastd²` will exit the loop
 """
 function refine(curve,lims,closed)::Function
-    align(X,u,t) = (curve(u,t)-X)'*tangent(curve,u,t)
-    dalign(X,u,t) = ForwardDiff.derivative(u->align(X,u,t),u)
-    return function(X,u::T,t;fastd²=Inf,itmx=10,stpmx=(lims[2]-lims[1])/20,stpmn=stpmx/100,stpmd=stpmx/10) where T
+    align(u,x,t) = (curve(u,t)-x)'*tangent(curve,u,t)
+    dalign(u,x,t) = ForwardDiff.derivative(u->align(u,x,t),u)
+    return function(u::T,x,t;fastd²=Inf,itmx=10,stpmx=(lims[2]-lims[1])/20,stpmn=stpmx/100,stpmd=stpmx/10) where T
         for _ in 1:itmx
-            u₀,a,da = u,align(X,u,t),dalign(X,u,t)
+            u₀,a,da = u,align(u,x,t),dalign(u,x,t)
             step = da < eps(T) ? -copysign(stpmx,a) : -clamp(a/da,-stpmx,stpmx)
             u = closed ? mymod(u+step,lims...) : clamp(u+step,lims...)
             Δ = min(abs(step),abs(u-u₀))
-            (Δ<stpmn || isfinite(fastd²) && Δ<stpmd && sum(abs2,curve(u,t)-X)≥fastd²) && break
+            (Δ<stpmn || isfinite(fastd²) && Δ<stpmd && sum(abs2,curve(u,t)-x)≥fastd²) && break
         end; u
     end
 end

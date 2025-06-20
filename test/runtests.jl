@@ -73,17 +73,17 @@ end
 @testset "Refine" begin
     circle(θ,t) = SA[cos(θ),sin(θ)]; lims = (0,2π)
     locate = refine(circle,lims,true)
-    @test locate(SA[1,1],1.,0.) ≈ π/4                   # good IC
-    @test locate(SA[1,1],mymod(-0.1,lims...),0.) ≈ π/4  # tests if `closed` works
-    @test locate(SA[1,1],mymod(-1.,lims...),0.) ≈ π/4   # bad IC, requires gradient step
+    @test locate(1.,SA[1,1],0.) ≈ π/4                   # good IC
+    @test locate(mymod(-0.1,lims...),SA[1,1],0.) ≈ π/4  # tests if `closed` works
+    @test locate(mymod(-1.,lims...),SA[1,1],0.) ≈ π/4   # bad IC, requires gradient step
 
     locate = refine(circle,(π/3,2π/3),false)            # finite arc
-    @test locate(SA[1,1],1.2,0.) ≈ π/3                  # test limits
+    @test locate(1.2,SA[1,1],0.) ≈ π/3                  # test limits
 
     ellipse(θ,t) = SA[6sin(θ),cos(θ)]
     locate = refine(ellipse,(0,π),false)
-    @test locate(ellipse(π/4,0.),1.,0.) ≈ π/4             # good IC
-    @test locate(ellipse(π/4,0.),2.,0.) ≈ π/4 broken=true # bad IC
+    @test locate(1.,ellipse(π/4,0.),0.) ≈ π/4             # good IC
+    @test locate(2.,ellipse(π/4,0.),0.) ≈ π/4 broken=true # bad IC
 end
 
 @testset "HashedLocators.jl" begin
