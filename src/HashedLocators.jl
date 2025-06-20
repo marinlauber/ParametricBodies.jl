@@ -2,15 +2,15 @@ using Adapt,KernelAbstractions
 """
     HashedLocator
 
-    - `refine<:Function` Performs bounded Newton root-finding step
+    - `refine<:Function` Minimizer refinement function
     - `lims::NTuple{2,T}:` limits of the `uv` parameter
     - `hash<:AbstractArray{T,2}:` Hash to supply good IC to `refine`
     - `lower::SVector{2,T}:` bottom corner of the hash in ξ-space
     - `step::T:` ξ-resolution of the hash
 
-Type to preform efficient and fairly stable `locate`ing on parametric curves. Newton's method is fast, 
-but can be very unstable for general parametric curves. This is mitigated by supplying a close initial 
-`uv` guess by interpolating `hash`, and by bounding the derivative adjustment in the Newton `refine`ment.
+Type to preform efficient and fairly stable `locate`ing on parametric curves. Root=finding can be very 
+unstable for general parametric curves. This is mitigated by supplying a close initial `uv` guess by 
+interpolating `hash` before calling `refine`.
 
 ----
 
@@ -64,19 +64,6 @@ function HashedLocator(curve,lims;t⁰=0,step=1,buffer=2,T=Float32,mem=Array,kwa
     update!(l,curve,t⁰,samples)
 end
 
-@inline mymod(x,low,high) = low+mod(x-low,high-low)
-function refine(curve,lims,closed)::Function
-    # uv⁺ = argmin_uv (X-curve(uv,t))² -> alignment(X,uv⁺,t))=0
-    align(X,uv,t) = (X-curve(uv,t))'*tangent(curve,uv,t)
-    dalign(X,uv,t) = ForwardDiff.derivative(uv->align(X,uv,t),uv)
-    mx = (lims[2]-lims[1])/20
-    return function(X,uv::T,t) where T # step to alignment root
-        a,da = align(X,uv,t),dalign(X,uv,t)
-        step = da > -eps(T) ? -copysign(mx,a) : clamp(a/da,-mx,mx)
-        new = closed ? mymod(uv-step,lims...) : clamp(uv-step,lims...)
-        ifelse(isnan(step),uv,new),abs(new-uv)<0.01mx,abs(new-uv)<0.1mx
-    end
-end
 notC¹(l::HashedLocator,uv) = any(uv.≈l.lims)
 eachside(l::HashedLocator,uv,s=√eps(typeof(uv))) = l.closed ? mymod.(uv .+(-s,s),l.lims...) : clamp.(uv .+(-s,s),l.lims...)
 lims(b::ParametricBody{T,L}) where {T,L<:HashedLocator} = b.locate.lims
@@ -100,30 +87,27 @@ update!(l::HashedLocator,curve,t,samples=l.lims)=(_update!(get_backend(l.hash),6
         dᵢ<d && (uv=uvᵢ; d=dᵢ)
     end
     
-    # Refine estimate with clamped Newton step
-    l.hash[I] = l.refine(x,uv,t)[1]
+    # Refine estimate once
+    l.hash[I] = l.refine(x,uv,t;itmx=1)
 end
 
 """
-    (l::HashedLocator)(x,t)
+    (l::HashedLocator)(x,t,fastd²=Inf)
 
 Estimate the parameter value `uv⁺ = argmin_uv (X-curve(uv,t))²` in two steps:
-1. Interploate an initial guess  `uv=l.hash(x)`. Return `uv⁺~uv` if `x` is outside the hash domain.
-2. Apply a bounded Newton step `uv⁺≈l.refine(x,uv,t)` to refine the estimate.
+1. Loop-up an initial guess `uv=l.hash(x)`. Return `uv⁺~uv` if `x` is outside the hash domain.
+2. Otherwise `refine` this guess until converged or the square distance ≥ `fastd²`.
 """
-function (l::HashedLocator)(x,t)
+function (l::HashedLocator)(x,t;fastd²=Inf)
     # Map location to hash index and clamp to within domain
     hash_index = (x-l.lower)/l.step .+ 1
     clamped = clamp.(hash_index,1,size(l.hash))
 
-    # Get hashed parameter and return if index is outside domain
+    # Get hashed parameter 
     uv = l.hash[round.(Int,clamped)...]
-    hash_index != clamped && return uv
 
-    # Otherwise, refine estimate
-    for _ in 1:10
-        uv,done,_ = l.refine(x,uv,t); done && break
-    end; uv
+    # Return it if index is outside domain. Otherwise, refine estimate
+    hash_index != clamped ? uv : l.refine(x,uv,t;fastd²)
 end
 
 """

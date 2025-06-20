@@ -1,29 +1,6 @@
 module ParametricBodies
 
 using StaticArrays,ForwardDiff
-# Non-allocating method for 2x3 SMatrix solve
-using LinearAlgebra
-import Base: \
-@inline function (\)(a::SMatrix{2,3}, b::SVector{2})
-    # columns of a'
-    a1,a2 = a[1,:],a[2,:]
-    
-    # Q,R decomposition
-    r11 = norm(a1)
-    q1 = a1/r11
-    r12 = q1'*a2
-    p = a2-r12*q1
-    r22 = norm(p) < eps(r11) ? one(r11) : norm(p)
-    q2 = p/r22
-
-    # forward substitution to solve v = R'\b
-    v1 = b[1]/r11
-    v2 = (b[2]-r12*v1)/r22
-
-    # return solution x = Qv 
-    return q1*v1+q2*v2
-end
-
 import WaterLily: AbstractBody,measure,sdf,interp
 
 abstract type AbstractParametricBody <: AbstractBody end
@@ -131,30 +108,23 @@ export AbstractParametricBody,ParametricBody,sdf,measure
 abstract type AbstractLocator <:Function end
 export AbstractLocator
 
+include("LinAlg.jl")
+include("Refine.jl")
+export mymod,refine
+
 include("HashedLocators.jl")
-export HashedBody, HashedLocator, refine, mymod, update!
+export HashedBody, HashedLocator, update!
 
 include("NurbsCurves.jl")
 export NurbsCurve,BSplineCurve,interpNurbs
 
 include("NurbsLocator.jl")
-export NurbsLocator,davidon,DynamicNurbsBody
+export NurbsLocator,DynamicNurbsBody
 
 include("PlanarBodies.jl")
 export PlanarBody
 
 include("Recipes.jl")
 export f
-
-# Backward compatibility for extensions
-if !isdefined(Base, :get_extension)
-    using Requires
-end
-function __init__()
-    @static if !isdefined(Base, :get_extension)
-        @require AMDGPU = "21141c5a-9bdb-4563-92ae-f87d6854732e" include("../ext/ParametricBodiesAMDGPUExt.jl")
-        @require CUDA = "052768ef-5323-5732-b1bb-66c8b64840ba" include("../ext/ParametricBodiesCUDAExt.jl")
-    end
-end
 
 end

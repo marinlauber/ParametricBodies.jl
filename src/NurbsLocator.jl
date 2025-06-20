@@ -36,28 +36,23 @@ lims(b::ParametricBody{T,L}) where {T,L<:NurbsLocator} = (first(b.curve.knots),l
     (l::NurbsLocator)(x,t,fastd²=Inf)
 
 Estimate the parameter value `u⁺ = argmin_u (x-l.curve(u))²` for a NURBS in two steps
-1. The nearest point `u` on the `degree=1` version of the curve is found.
-2. `refine` this guess until the change in `u` is negligible or the square distance ≥ `fastd²`. 
+1. The nearest point `u` on the `degree=1` version of the curve is found. Return this if degree==1.
+2. Otherwse `refine` this guess until converged or the square distance ≥ `fastd²`. 
 """
-function (l::NurbsLocator{C})(x,t,fastd²=Inf) where C<:NurbsCurve{n,degree} where {n,degree}
-    u = lin_loc(l,x)
-    degree == 1 && return u
-    for _ in 1:5
-        u,done,close = l.refine(x,u,t)
-        (done || close && isfinite(fastd²) && sum(abs2,l.curve(u)-x)≥fastd²) && break
-    end; u
-end
-function lin_loc(l::NurbsLocator,x)
+function (l::NurbsLocator{C})(x,t;fastd²=Inf) where C<:NurbsCurve{N,degree} where {N,degree}
+    # Closest parameter on linear NURBS
     pnts = l.curve.pnts; n = size(pnts,2)-1
-    b = pnts[:,1]; u = (x=zero(eltype(pnts)),f=sum(abs2,x-b))
-    for i in 1:n
-        a = b; b = pnts[:,i+1]
-        a==b && continue
-        s = b-a                                # tangent
-        p = clamp(((x-a)'*s)/(s'*s),0,1)       # perp distance along s
-        uᵢ = (x=(i-1+p)/n,f=sum(abs2,x-a-s*p)) # segment minimizer
-        uᵢ.f<u.f && (u=uᵢ) # Replace current best
-    end; u.x
+    b = pnts[:,1]; u,d² = zero(eltype(pnts)),sum(abs2,x-b)
+    for i in 1:n                        # Loop through segments
+        a = b; b = pnts[:,i+1]               # segment a-to-b
+        a==b && continue                     # skip zero length segments
+        s = b-a                              # tangent vector
+        p = clamp(((x-a)'*s)/(s'*s),0,1)     # perp distance along s
+        uᵢ,d²ᵢ = (i-1+p)/n,sum(abs2,x-a-s*p) # segment minimizer
+        d²ᵢ<d² && (u=uᵢ;d²=d²ᵢ)              # update if uᵢ is closests
+    end
+    # Return if degree=1, otherwise refine
+    degree == 1 ? u : l.refine(x,u,t;fastd²)
 end
 """
     ParametricBody(curve::NurbsCurve;kwargs...)

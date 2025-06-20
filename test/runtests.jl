@@ -70,6 +70,22 @@ end
     @test @allocated(SA_F32[1 0 0; 0 1 0]\SA_F32[0,1]) <400
 end
 
+@testset "Refine" begin
+    circle(θ,t) = SA[cos(θ),sin(θ)]; lims = (0,2π)
+    locate = refine(circle,lims,true)
+    @test locate(SA[1,1],1.,0.) ≈ π/4                   # good IC
+    @test locate(SA[1,1],mymod(-0.1,lims...),0.) ≈ π/4  # tests if `closed` works
+    @test locate(SA[1,1],mymod(-1.,lims...),0.) ≈ π/4   # bad IC, requires gradient step
+
+    locate = refine(circle,(π/3,2π/3),false)            # finite arc
+    @test locate(SA[1,1],1.2,0.) ≈ π/3                  # test limits
+
+    ellipse(θ,t) = SA[6sin(θ),cos(θ)]
+    locate = refine(ellipse,(0,π),false)
+    @test locate(ellipse(π/4,0.),1.,0.) ≈ π/4             # good IC
+    @test locate(ellipse(π/4,0.),2.,0.) ≈ π/4 broken=true # bad IC
+end
+
 @testset "HashedLocators.jl" begin
     curve(θ,t) = SA[cos(θ+t),sin(θ+t)]
     locator = HashedLocator(curve,(0.,2π),T=Float32)
