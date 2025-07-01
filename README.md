@@ -1,10 +1,12 @@
-# ParametricBodies
+![CI](https://github.com/WaterLily-jl/ParametricBodies.jl/actions/workflows/CI.yml/badge.svg)
+[![Julia](https://img.shields.io/badge/julia-1.10+-green.svg)](https://julialang.org)
+
+# ParametricBodies.jl
 
 Tutorial video [![tutorial video link](https://img.youtube.com/vi/6PmJJKVOfvc/hqdefault.jpg)](https://www.youtube.com/watch?v=6PmJJKVOfvc)
 
-
-This package to enable working with parametrically defined shapes in [WaterLily](https://github.com/WaterLily-jl/WaterLily.jl). You can add this package via the Julia package manager
-```
+ParametricBodies.jl is a support package to [WaterLily.jl](https://github.com/WaterLily-jl/WaterLily.jl) for defining, transforming, and embedding smooth parametric bodies in 2D and 3D flows. You can add this package via the Julia package manager
+```julia
 ] add ParametricBodies
 using ParametricBodies
 ```
@@ -13,7 +15,7 @@ A `ParametricBody` is a subtype of  `WaterLily.AbstractBody`, defining the `meas
 
 ### Parametric Bodies
 
-A `ParametricBody` is defined using a parametric function repsentation of that shape. For example, a circle can be defined as
+A `ParametricBody` is defined using a parametric function representation of that shape. For example, a circle can be defined as
 ```julia
 using StaticArrays
 curve(θ,t) = SA[cos(θ),sin(θ)]
@@ -45,24 +47,29 @@ lims = (0.,2π) # limits of the parametric function
 locator = HashedLocator(curve,lims,step=0.25)
 body = ParametricBody(curve,locate)
 ```
-or the convience constructor
+or the convenience constructor
 ```julia
 body = HashedBody(curve,(0.,2π),step=0.25)
 ```
-This locator function samples the curve over the supplied parametric limits and uses a Newton root finding method to locate the parameter value. A 2D array of parameter data (a hash table) is used to supply a good initial guess to the Newton solver. 
+This locator samples the curve over the supplied parametric limits and uses a Newton root finding method to locate the parameter value. A 2D array of parameter data (a hash table) is used to supply a good initial guess to the Newton solver. 
 
 Note that a `HashedLocator` knows nothing about the details of the `curve`, and you must test it's accuracy before using it in a WaterLily simulation. Also, the hash must be updated if the curve is time-varying, and must be stored in a GPU array when computing on the GPU. See the example folder. The `HashedLocator` is currently only available for 2D curves, although it can be used with mapping and `PlanarBodies`, to define bodies for 3D simulations, see below.
 
 ### NurbsCurve & Locator
 
-A NURBS (Non-Uniform Rational B-Spline) based `NurbsCurve` struct make both the definition and location process more simple, and extends to 3D space-curves. For example, given a matrix of 2D points `pnts` along a desired curve, we can define a body easily
+A NURBS (Non-Uniform Rational B-Spline) based `NurbsCurve` struct simplifies the definition and location process, and extends easily to 3D space-curves. For example, given a matrix of 2D points `pnts` along a desired curve, we can define a body easily
 ```julia
 pnts = SA[0. 3. -1. -4  -4.
           0. 4.  4.  0. -3.]
 nurbs = interpNurbs(pnts;p=3) # fit a cubic NurbsCurve through the points
 body = ParametricBody(nurbs)
 ```
-An efficient and accurate `NurbsLocator` is created automatically for `NurbsCurve`s. However, it is not as fast as a `HashedLocator`. If speed is a limiting factor, you can always use `body = HashedBody(nurbs,(0,1))` to create a fast locator, although it may not be as accurate.
+An efficient and accurate `NurbsLocator` is created automatically for `NurbsCurve`s. This should be preferred over `HashedLocator(nurbs,(0,1))`, especially for `degree=1` splines featuring sharp corners.
+```julia
+M = BSplineCurve(SA_F32[1 1 0 -1 -1;0 1 1/2 1 0];degree=1) # Make Linear B-Spline
+letter = ParametricBody(M,thk=2,boundary=false)            # Automatically makes a NURBSLocator
+# Don't use HashedBody(M,(0,1),step=0.1,thk=2,boundary=false)
+```
 
 You can also create a NURBS by supplying the control points, knots and weights directly. For example, the code below defines a 3D torus using a NURBS to describe the major circle of radius 7, and thickening the space-curve with a minor radius of 1.
 ```julia
@@ -95,7 +102,7 @@ sim = arc_sim();
 ```
 See the WaterLily repo and the video above for more discussion of this primary use of the map function. 
 
-A secondary application of the mapping function for `ParametricBodies` is to map from a 3D x-space to a 2D ξ-space, effectively extruding a 2D parametric curve into a 3D surface. For example, we can make a cylinder or sphere starting from a 2D NURBS circle using
+A secondary application of the mapping function for `ParametricBodies` is to map from a 3D x-space to a 2D ξ-space, effectively "sweeping" a 2D parametric curve into a 3D surface. For example, we can make a cylinder or sphere starting from a 2D NURBS circle using
 ```julia
 cps = SA_32[7 7 0 -7 -7 -7  0  7 7
             0 7 7  7  0 -7 -7 -7 0] # a 2D circle
@@ -104,12 +111,12 @@ knots = SA_32[0,0,0,1/4,1/4,1/2,1/2,3/4,3/4,1,1,1]  # non-uniform knot and weigh
 circle = NurbsCurve(cps,knots,weights)
 
 # Make a cylinder
-map(x::SVector{3},t) = SA[x[2],x[3]] # extrude along x[1]-axis
-cylinder = ParametricBody(circle;map,ndims=3)  
+extrude(x::SVector{3},t) = SA[x[2],x[3]] # extrude along x[1]-axis
+cylinder = ParametricBody(circle;map=extrude,ndims=3)  
 
 # Make a sphere
-map(x::SVector{3},t) = SA[x[1],hypot(x[2],x[3])] # revolve around x[1]-axis
-sphere = ParametricBody(circle;map,ndims=3)
+revolve(x::SVector{3},t) = SA[x[1],hypot(x[2],x[3])] # revolve around x[1]-axis
+sphere = ParametricBody(circle;map=revolve,ndims=3)
 ```
 and if we started from, say, a NACA profile, the same technique could make a prismatic wing or a 3D air-ship hull. Note that the `ndims` argument must be explicitly supplied to let `ParametricBodies` know that `map(x)` uses a 3D input vector.
 
@@ -127,7 +134,7 @@ where the mapping has been used to scale and rotate the disk as well.
 
 and these methods can be used together, as demonstrated in the example folder. There are many examples of time varying mappings in the WaterLily repo and the video above, so we'll focus on time-varying curves here. 
 
-If `curve` depends explicitly on `t`, this will automatically be reflected in the position and velocity of the body in a simulation. For example, a spinning circle is easily acheived using
+If `curve` depends explicitly on `t`, this will automatically be reflected in the position and velocity of the body in a simulation. For example, a spinning circle is easily achieved using
 ```julia
 curve(θ,t) = SA[cos(θ+t),sin(θ+t)]
 locate(x::SVector{2},t) = atan(x[2],x[1])-t

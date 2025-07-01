@@ -2,15 +2,15 @@ using Adapt,KernelAbstractions
 """
     HashedLocator
 
-    - `refine<:Function`` Performs bounded Newton root-finding step
+    - `refine<:Function` Minimizer refinement function
     - `lims::NTuple{2,T}:` limits of the `uv` parameter
     - `hash<:AbstractArray{T,2}:` Hash to supply good IC to `refine`
     - `lower::SVector{2,T}:` bottom corner of the hash in ξ-space
     - `step::T:` ξ-resolution of the hash
 
-Type to preform efficient and fairly stable `locate`ing on parametric curves. Newton's method is fast, 
-but can be very unstable for general parametric curves. This is mitigated by supplying a close initial 
-`uv` guess by interpolating `hash``, and by bounding the derivative adjustment in the Newton `refine`ment.
+Type to preform efficient and fairly stable `locate`ing on parametric curves. Root=finding can be very 
+unstable for general parametric curves. This is mitigated by supplying a close initial `uv` guess by 
+interpolating `hash` before calling `refine`.
 
 ----
 
@@ -37,13 +37,15 @@ struct HashedLocator{T,F<:Function,A<:AbstractArray{T,2}} <: AbstractLocator
     hash::A
     lower::SVector{2,T}
     step::T
+    closed::Bool
 end
-Adapt.adapt_structure(to, x::HashedLocator) = HashedLocator(x.refine,x.lims,adapt(to,x.hash),x.lower,x.step)
+Adapt.adapt_structure(to, x::HashedLocator) = HashedLocator(x.refine,x.lims,adapt(to,x.hash),x.lower,x.step,x.closed)
 
 function HashedLocator(curve,lims;t⁰=0,step=1,buffer=2,T=Float32,mem=Array,kwargs...)
     # Apply type and get refinement function
     lims,t⁰,step = T.(lims),T(t⁰),T(step)
-    f = refine(curve,lims,curve(first(lims),t⁰)≈curve(last(lims),t⁰))
+    closed = curve(first(lims),t⁰)≈curve(last(lims),t⁰)
+    f = refine(curve,lims,closed && tangent(curve,first(lims),t⁰)≈tangent(curve,last(lims),t⁰))
 
     # Get curve's bounding box
     samples = range(lims...,64)
@@ -58,22 +60,13 @@ function HashedLocator(curve,lims;t⁰=0,step=1,buffer=2,T=Float32,mem=Array,kwa
 
     # Allocate hash and struct, and update hash
     hash = fill(first(lims),Int.((upper-lower) .÷ step .+ (1+2buffer))...) |> mem
-    l=adapt(mem,HashedLocator{T,typeof(f),typeof(hash)}(f,lims,hash,lower.-buffer*step,step))
+    l=adapt(mem,HashedLocator{T,typeof(f),typeof(hash)}(f,lims,hash,lower.-buffer*step,step,closed))
     update!(l,curve,t⁰,samples)
 end
 
-@inline mymod(x,low,high) = low+mod(x-low,high-low)
-function refine(curve,lims,closed)::Function
-    # uv⁺ = argmin_uv (X-curve(uv,t))² -> alignment(X,uv⁺,t))=0
-    dcurve(uv,t) = ForwardDiff.derivative(uv->curve(uv,t),uv)
-    align(X,uv,t) = (X-curve(uv,t))'*dcurve(uv,t)
-    dalign(X,uv,t) = ForwardDiff.derivative(uv->align(X,uv,t),uv)
-    return function(X,uv,t) # Newton step to alignment root
-        step=align(X,uv,t)*clamp(1/dalign(X,uv,t),-2,2)
-        ifelse(isnan(step),uv,ifelse(closed,mymod(uv-step,lims...),clamp(uv-step,lims...)))
-    end
-end
 notC¹(l::HashedLocator,uv) = any(uv.≈l.lims)
+eachside(l::HashedLocator,uv,s=√eps(typeof(uv))) = l.closed ? mymod.(uv .+(-s,s),l.lims...) : clamp.(uv .+(-s,s),l.lims...)
+lims(b::ParametricBody{T,L}) where {T,L<:HashedLocator} = b.locate.lims
 
 """
     update!(l::HashedLocator,curve,t,samples=l.lims)
@@ -94,29 +87,27 @@ update!(l::HashedLocator,curve,t,samples=l.lims)=(_update!(get_backend(l.hash),6
         dᵢ<d && (uv=uvᵢ; d=dᵢ)
     end
     
-    # Refine estimate with clamped Newton step
-    l.hash[I] = l.refine(x,uv,t)
+    # Refine estimate once
+    l.hash[I] = l.refine(uv,x,t;itmx=1)
 end
 
 """
-    (l::HashedLocator)(x,t)
+    (l::HashedLocator)(x,t,fastd²=Inf)
 
 Estimate the parameter value `uv⁺ = argmin_uv (X-curve(uv,t))²` in two steps:
-1. Interploate an initial guess  `uv=l.hash(x)`. Return `uv⁺~uv` if `x` is outside the hash domain.
-2. Apply a bounded Newton step `uv⁺≈l.refine(x,uv,t)` to refine the estimate.
+1. Loop-up an initial guess `uv=l.hash(x)`. Return `uv⁺~uv` if `x` is outside the hash domain.
+2. Otherwise `refine` this guess until converged or the square distance ≥ `fastd²`.
 """
-function (l::HashedLocator)(x,t)
+function (l::HashedLocator)(x,t;fastd²=Inf)
     # Map location to hash index and clamp to within domain
     hash_index = (x-l.lower)/l.step .+ 1
     clamped = clamp.(hash_index,1,size(l.hash))
 
-    # Get hashed parameter and return if index is outside domain
+    # Get hashed parameter 
     uv = l.hash[round.(Int,clamped)...]
-    hash_index != clamped && return uv
 
-    # Otherwise, refine estimate with two Newton steps
-    uv = l.refine(x,uv,t)
-    return l.refine(x,uv,t)
+    # Return it if index is outside domain. Otherwise, refine estimate
+    hash_index != clamped ? uv : l.refine(uv,x,t;fastd²)
 end
 
 """
@@ -129,8 +120,8 @@ function HashedBody(curve,lims::Tuple;T=Float32,map=dmap,kwargs...)
     wcurve(u::U,t::T) where {U,T} = SVector{2,promote_type(U,T)}(curve(u,t))
     wmap(x::SVector{n,X},t::T) where {n,X,T} = SVector{n,promote_type(X,T)}(map(x,t))
 
-    locate = HashedLocator(wcurve,T.(lims);kwargs...)
-    ParametricBody(wcurve,locate;map=wmap,kwargs...)
+    locate = HashedLocator(wcurve,T.(lims);T,kwargs...)
+    ParametricBody(wcurve,locate;map=wmap,T,kwargs...)
 end
 Adapt.adapt_structure(to, x::ParametricBody{T,L}) where {T,L<:HashedLocator} =
     ParametricBody(x.curve,x.dotS,adapt(to,x.locate),x.map,x.scale,x.half_thk,x.boundary)

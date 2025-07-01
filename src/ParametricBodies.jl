@@ -1,29 +1,6 @@
 module ParametricBodies
 
 using StaticArrays,ForwardDiff
-# Non-allocating method for 2x3 SMatrix solve
-using LinearAlgebra
-import Base: \
-@inline function (\)(a::SMatrix{2,3}, b::SVector{2})
-    # columns of a'
-    a1,a2 = a[1,:],a[2,:]
-    
-    # Q,R decomposition
-    r11 = norm(a1)
-    q1 = a1/r11
-    r12 = q1'*a2
-    p = a2-r12*q1
-    r22 = norm(p) < eps(r11) ? one(r11) : norm(p)
-    q2 = p/r22
-
-    # forward substitution to solve v = R'\b
-    v1 = b[1]/r11
-    v2 = (b[2]-r12*v1)/r22
-
-    # return solution x = Qv 
-    return q1*v1+q2*v2
-end
-
 import WaterLily: AbstractBody,measure,sdf,interp
 
 abstract type AbstractParametricBody <: AbstractBody end
@@ -78,13 +55,13 @@ Example:
     @test n ≈ SA[-3/5, 4/5]
     @test V ≈ SA[-4/5,-3/5]
 """
-struct ParametricBody{T,L<:Function,S<:Function,dS<:Function,M<:Function} <: AbstractParametricBody
+struct ParametricBody{T,L<:Function,S<:Function,dS<:Function,M<:Function,dT<:Function} <: AbstractParametricBody
     curve::S    #ξ = curve(v,t)
     dotS::dS    #dξ/dt
     locate::L   #u = locate(ξ,t)
     map::M      #ξ = map(x,t)
     scale::T    #|dx/dξ| = scale
-    half_thk::T #half thickness
+    half_thk::dT #half thickness
     boundary::Bool 
 end
 # Default functions
@@ -93,31 +70,35 @@ dmap(x,t) = x
 get_dotS(curve) = (u,t)->ForwardDiff.derivative(t->curve(u,t),t)
 x_hat(ndims) = SVector(ntuple(i->√inv(ndims),ndims))
 get_scale(map,x,t=0) = norm(ForwardDiff.jacobian(x->map(x,t),x)\x_hat(length(map(x,t))))
-ParametricBody(curve,locate;dotS=get_dotS(curve),thk=0f0,boundary=true,map=dmap,ndims=2,x₀=x_hat(ndims),
-    scale=get_scale(map,x₀),T=Float32,kwargs...) = ParametricBody(curve,dotS,locate,map,T(scale),T(thk/2),boundary)
-
+ParametricBody(curve,locate;dotS=get_dotS(curve),thk=(u)->0f0,boundary=true,map=dmap,ndims=2,x₀=x_hat(ndims),
+               scale=get_scale(map,x₀),T=Float32,kwargs...) = ParametricBody(curve,dotS,locate,map,T(scale),make_func(thk),boundary)
+make_func(a::Function) = (s)->a(s)/2
+make_func(a::Number) = (s)->a/2
 function curve_props(body::ParametricBody,x,t;fastd²=Inf)
-    # Map x to ξ and do fast bounding box check
+    # Map x to ξ, locate nearest u (quickly if applicable), and get vector
     ξ = body.map(x,t)
-    if isfinite(fastd²) && applicable(body.locate,ξ,t,true)
-        d = body.scale*body.locate(ξ,t,true)-body.half_thk
-        d^2>fastd² && return d,zero(ξ),zero(ξ)
-    end
-
-    # Locate nearest u, and get vector
-    u = body.locate(ξ,t)
+    u = applicable(body.locate,ξ,t,fastd²) ? body.locate(ξ,t,fastd²/body.scale^2) : body.locate(ξ,t)
     p = ξ-body.curve(u,t)
 
-    # Get unit normal 
-    n = notC¹(body.locate,u) ? hat(p) : (s=tangent(body.curve,u,t); body.boundary ? perp(s) : align(p,s))
+    # Get outward unit normal
+    n = if body.boundary # outward = RHS of the tangent vector
+        if C¹(body.locate,u)
+            perp(hat(tangent(body.curve,u,t))) # easy peasy
+        else # Set n s.t d=n'p even on corners/end-points...
+            s = sum(tangent.(body.curve,eachside(body.locate,u),t)) # mean tangent
+            sign(perp(s)'p)*hat(p)                                  # set sign
+        end
+    else # outward = towards p
+        notC¹(body.locate,u) ? hat(p) : align(p,hat(tangent(body.curve,u,t)))
+    end
     
     # Get scaled & thinkess adjusted distance and dot(S)
-    return (body.scale*p'*n-body.half_thk,n,body.dotS(u,t))
+    return (body.scale*p'*n-body.half_thk(u),n,body.dotS(u,t))
 end
-notC¹(::Function,u) = false
+notC¹(::Function,u) = false; C¹(f,u) = !notC¹(f,u)
 
 hat(p) = p/√(eps(eltype(p))+p'*p)
-tangent(curve,u,t) = hat(ForwardDiff.derivative(u->curve(u,t),u))
+tangent(curve,u,t) = ForwardDiff.derivative(u->curve(u,t),u)
 align(p,s) = hat(p-(p'*s)*s)
 perp(s::SVector{2}) = SA[s[2],-s[1]]
 perp(s) = s # should never be used!
@@ -127,30 +108,23 @@ export AbstractParametricBody,ParametricBody,sdf,measure
 abstract type AbstractLocator <:Function end
 export AbstractLocator
 
+include("LinAlg.jl")
+include("Refine.jl")
+export mymod,refine
+
 include("HashedLocators.jl")
-export HashedBody, HashedLocator, refine, mymod, update!
+export HashedBody, HashedLocator, update!
 
 include("NurbsCurves.jl")
 export NurbsCurve,BSplineCurve,interpNurbs
 
 include("NurbsLocator.jl")
-export NurbsLocator,davidon,DynamicNurbsBody
+export NurbsLocator,DynamicNurbsBody
 
 include("PlanarBodies.jl")
 export PlanarBody
 
 include("Recipes.jl")
 export f
-
-# Backward compatibility for extensions
-if !isdefined(Base, :get_extension)
-    using Requires
-end
-function __init__()
-    @static if !isdefined(Base, :get_extension)
-        @require AMDGPU = "21141c5a-9bdb-4563-92ae-f87d6854732e" include("../ext/ParametricBodiesAMDGPUExt.jl")
-        @require CUDA = "052768ef-5323-5732-b1bb-66c8b64840ba" include("../ext/ParametricBodiesCUDAExt.jl")
-    end
-end
 
 end
