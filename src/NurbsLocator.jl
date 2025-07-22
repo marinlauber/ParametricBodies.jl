@@ -33,7 +33,7 @@ end
 
 lims(b::ParametricBody{T,L}) where {T,L<:NurbsLocator} = (first(b.curve.knots),last(b.curve.knots))
 """
-    (l::NurbsLocator)(x,t,fastd²=Inf)
+    (l::NurbsLocator)(x,t;fastd²=Inf)
 
 Estimate the parameter value `u⁺ = argmin_u (x-l.curve(u))²` for a NURBS in two steps
 1. The nearest point `u` on the `degree=1` version of the curve is found. Return this if degree==1.
