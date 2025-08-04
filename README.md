@@ -73,11 +73,11 @@ letter = ParametricBody(M,thk=2,boundary=false)            # Automatically makes
 
 You can also create a NURBS by supplying the control points, knots and weights directly. For example, the code below defines a 3D torus using a NURBS to describe the major circle of radius 7, and thickening the space-curve with a minor radius of 1.
 ```julia
-cps = SA_32[7 7 0 -7 -7 -7  0  7 7
+cps = SA_F32[7 7 0 -7 -7 -7  0  7 7
             0 7 7  7  0 -7 -7 -7 0
             0 0 0  0  0  0  0  0 0] # a (planar) 3D circle
-weights = SA_32[1.,√2/2,1.,√2/2,1.,√2/2,1.,√2/2,1.] # A perfect circle requires...
-knots = SA_32[0,0,0,1/4,1/4,1/2,1/2,3/4,3/4,1,1,1]  # non-uniform knot and weight vectors
+weights = SA_F32[1.,√2/2,1.,√2/2,1.,√2/2,1.,√2/2,1.] # A perfect circle requires...
+knots = SA_F32[0,0,0,1/4,1/4,1/2,1/2,3/4,3/4,1,1,1]  # non-uniform knot and weight vectors
 circle = NurbsCurve(cps,knots,weights)
 torus = ParametricBody(circle,thk=2,boundary=false)
 ```
@@ -104,10 +104,10 @@ See the WaterLily repo and the video above for more discussion of this primary u
 
 A secondary application of the mapping function for `ParametricBodies` is to map from a 3D x-space to a 2D ξ-space, effectively "sweeping" a 2D parametric curve into a 3D surface. For example, we can make a cylinder or sphere starting from a 2D NURBS circle using
 ```julia
-cps = SA_32[7 7 0 -7 -7 -7  0  7 7
+cps = SA_F32[7 7 0 -7 -7 -7  0  7 7
             0 7 7  7  0 -7 -7 -7 0] # a 2D circle
-weights = SA_32[1.,√2/2,1.,√2/2,1.,√2/2,1.,√2/2,1.] # A perfect circle requires...
-knots = SA_32[0,0,0,1/4,1/4,1/2,1/2,3/4,3/4,1,1,1]  # non-uniform knot and weight vectors
+weights = SA_F32[1.,√2/2,1.,√2/2,1.,√2/2,1.,√2/2,1.] # A perfect circle requires...
+knots = SA_F32[0,0,0,1/4,1/4,1/2,1/2,3/4,3/4,1,1,1]  # non-uniform knot and weight vectors
 circle = NurbsCurve(cps,knots,weights)
 
 # Make a cylinder
