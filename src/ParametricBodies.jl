@@ -26,7 +26,7 @@ end
 Signed distance from `x` to closest point on `body.curve` at time `t`. Sign depends on the
 winding direction of the parametric curve.
 """
-sdf(body::AbstractParametricBody,x,t;kwargs...) = curve_props(body,x,t;kwargs...)[1]
+sdf(body::AbstractParametricBody,x,t;fastd²=0) = curve_props(body,x,t;fastd²)[1]
 
 """
     ParametricBody{T::Real}(curve,locate) <: AbstractBody
@@ -77,7 +77,7 @@ make_func(a::Number) = (s)->a/2
 function curve_props(body::ParametricBody,x,t;fastd²=Inf)
     # Map x to ξ, locate nearest u (quickly if applicable), and get vector
     ξ = body.map(x,t)
-    u = applicable(body.locate,ξ,t,fastd²) ? body.locate(ξ,t,fastd²/body.scale^2) : body.locate(ξ,t)
+    u = applicable(body.locate,ξ,t;fastd²) ? body.locate(ξ,t,fastd²=fastd²/body.scale^2) : body.locate(ξ,t)
     p = ξ-body.curve(u,t)
 
     # Get outward unit normal

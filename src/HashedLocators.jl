@@ -92,7 +92,7 @@ update!(l::HashedLocator,curve,t,samples=l.lims)=(_update!(get_backend(l.hash),6
 end
 
 """
-    (l::HashedLocator)(x,t,fastd²=Inf)
+    (l::HashedLocator)(x,t;fastd²=Inf)
 
 Estimate the parameter value `uv⁺ = argmin_uv (X-curve(uv,t))²` in two steps:
 1. Loop-up an initial guess `uv=l.hash(x)`. Return `uv⁺~uv` if `x` is outside the hash domain.

@@ -35,12 +35,11 @@ end
 function curve_props(body::PlanarBody{T},x::SVector{3},t;fastd²=Inf) where T
     # Get vector to point
     ξ = body.map(x,t)
-    if body.scale*abs(ξ[3])<2body.half_thk # might be close to planar body
+    p = if body.scale*abs(ξ[3])<body.half_thk+max(body.half_thk,√fastd²) # might be close to planar body
         d,n,_ = curve_props(body.planform,SA[ξ[1],ξ[2]],t;fastd²)
-        d^2>fastd² && return d,zero(x),zero(x) # can't trust n
-        p = SA[max(d,0)*n[1],max(d,0)*n[2],ξ[3]]
+        SA[max(d,0)*n[1],max(d,0)*n[2],ξ[3]]
     else
-        p = SA[0,0,ξ[3]] # simple planar approximation
+        SA[0,0,ξ[3]] # simple planar approximation
     end
 
     # return scaled distance, normal, and dot(S)=zero

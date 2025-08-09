@@ -290,12 +290,15 @@ end
     square = BSplineCurve(SA{T}[5 5 0 -5 -5 -5  0  5 5
                                 0 5 5  5  0 -5 -5 -5 0],degree=1)
     body = PlanarBody(square,(0,1)) # test with HashedLocator
-    @test [measure(body,SA[8,2,0],0)...]≈[2-√3/2,[1,0,0],[0,0,0]] rtol=1e-6
-    @test [measure(body,SA[2,2,3],0)...]≈[2-√3/2,[0,0,1],[0,0,0]] rtol=1e-6
+    @test [measure(body,SA[8,2,0],0)...]≈[8-5-(√3+2)/2,[1,0,0],[0,0,0]] rtol=1e-6
+    @test [measure(body,SA[2,2,3],0)...]≈[3-(√3+2)/2,[0,0,1],[0,0,0]] rtol=1e-6
 
     body = PlanarBody(square;map=(x,t)->SA[2x[2],2x[3],2x[1]]) # test with NurbsLocator & map
-    @test [measure(body,SA[0,8,2],0)...]≈[9/2-√3/2,[0,1,0],[0,0,0]] rtol=1e-6
-    @test [measure(body,SA[3,2,2],0)...]≈[2-√3/2,[1,0,0],[0,0,0]] rtol=1e-6
+    @test [measure(body,SA[0,8,2],0)...]≈[8-5/2-(√3+2)/2,[0,1,0],[0,0,0]] rtol=1e-6
+    @test [measure(body,SA[3,2,2],0)...]≈[3-(√3+2)/2,[1,0,0],[0,0,0]] rtol=1e-6
+
+    @test sdf(body,SA[0,8,2],0)≈8-5/2-(√3+2)/2 atol=1e-6
+    @test sdf(body,SA[(√3+2)/2,2,2],0)≈0 atol=1e-6
 end
 using WaterLily
 @testset "WaterLily" begin
